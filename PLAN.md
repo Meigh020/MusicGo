@@ -19,6 +19,21 @@ Una aplicación web que corre en tu PC (y que más adelante podrías publicar).
 3. Elige formato y calidad.
 4. Pulsa "Descargar" y el archivo cae en sus descargas. ✅
 
+### Requisitos de producto (definidos por el usuario)
+
+1. 🎨 **Diseño**: glassmorfismo (efecto cristal desenfocado) con colores claros, azulados/celestes.
+2. 📦 **Tamaño por formato**: al analizar un enlace se muestra el tamaño estimado de cada
+   formato (OPUS/MP3/M4A/FLAC) con buena precisión, y tras descargar el tamaño real exacto.
+3. ✏️ **Nombre editable**: el usuario puede editar el nombre de la canción antes de descargar.
+4. 📱 **Responsividad**: se adapta a PC, laptop, tablet y móvil.
+5. 🔒 **Política de privacidad** y tratamiento de datos (aunque no recopilemos datos personales).
+6. 🍪 **Aviso de cookies** con términos y condiciones (no se recopilan datos de usuarios).
+7. ⚡ **Auto-recuperación de pistas restringidas (+18)**:
+   - Detección automática del bloqueo por restricción de edad en YouTube.
+   - Rescate de metadatos (título y artista) vía API pública de YouTube (oEmbed).
+   - Búsqueda alternativa en SoundCloud y descarga sin iniciar sesión, con aviso transparente.
+   - Soporte opcional de `backend/cookies.txt` para videos privados del futuro.
+
 ---
 
 ## 2. Conceptos básicos

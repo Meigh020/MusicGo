@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+.vite/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Descargas temporales del backend
+backend/downloads/
+
+# Sensible (nunca subir cookies reales)
+cookies.txt
+
+# Sistema
+.DS_Store
+Thumbs.db
