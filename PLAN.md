@@ -231,15 +231,15 @@ de 8 MB porque conserva cada bit del original.
 - **Frontend**: React con input de enlace + selector + botón, descarga vía `fetch` + `blob`.
 - Meta: pegar enlace → cae el archivo. ✅
 
-### Fase 2 — Todos los formatos + calidad
-- Agregar **M4A**, **FLAC** y selector de calidad (MP3 V0 / 320k / 128k…).
-- **Progreso real** en la página (la conversión tarda): aviso por polling o WebSocket.
-- Metadatos (título, artista, carátula) cuando la fuente los tenga.
+### Fase 2 — Todos los formatos + calidad ✅ completada
+- Agregar **M4A**, **FLAC** ✅ y **MP3 a 320 kbps CBR** (máximo del formato).
+- **Progreso real** en la página: polling + hooks de yt-dlp (porcentaje real de descarga) ✅
+- Metadatos (título, artista, carátula) incrustados en el archivo ✅ — título y artista **editables** en la UI antes de descargar.
+- **Cola de varias descargas a la vez** ✅ (multi-enlace, persistente en localStorage, descarga secuencial).
 
 ### Fase 3 — Pulido
 - Mensajes de error claros (enlace inválido, video privado, sin conexión).
 - Diseño con estilo y logo de MusicGo (CSS + Tailwind o CSS simple, lo decidimos).
-- Cola de varias descargas a la vez.
 
 ### Fase 4 — (Opcional, futuro) Publicar en internet
 - VPS (Hetzner / DigitalOcean / Oracle Cloud) + Docker + dominio + HTTPS.

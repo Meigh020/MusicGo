@@ -17,6 +17,9 @@ Descargador de música web: pega un enlace de YouTube, elige el formato y descar
 - ✏️ **Nombre del archivo editable** antes de descargar.
 - 🏷️ **Título y artista editables**: se incrustan como metadatos dentro del archivo
   (MP3/M4A/FLAC) sin tocar la calidad del audio.
+- 📋 **Cola de descargas**: modalidad multi-enlace (una URL por línea), con formato,
+  título, artista y nombre editables por canción, reordenar/eliminar, reintentar
+  fallidas y progreso global. La cola se guarda en tu navegador (sobrevive recargas).
 - ⚡ **Auto-recuperación +18**: si YouTube bloquea la pista por restricción de
   edad, MusicGo rescata título/artista vía la API pública de YouTube (oEmbed) y
   busca la versión oficial en SoundCloud, avisándote de forma transparente.

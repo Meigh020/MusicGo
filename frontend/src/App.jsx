@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Route, Routes, NavLink, Link } from "react-router-dom";
 import DownloadForm from "./components/DownloadForm.jsx";
+import QueueForm from "./components/QueueForm.jsx";
 import CookieBanner from "./components/CookieBanner.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
@@ -53,6 +55,7 @@ export default function App() {
 }
 
 function Home() {
+  const [mode, setMode] = useState("simple");
   return (
     <>
       <header className="hero">
@@ -63,7 +66,27 @@ function Home() {
         </p>
         <span className="badge">⚡ Mejor calidad = OPUS original, sin recodificar</span>
       </header>
-      <DownloadForm />
+
+      <div className="mode-tabs" role="tablist" aria-label="Modo de descarga">
+        <button
+          role="tab"
+          aria-selected={mode === "simple"}
+          className={mode === "simple" ? "active" : ""}
+          onClick={() => setMode("simple")}
+        >
+          🎯 Simple · una canción
+        </button>
+        <button
+          role="tab"
+          aria-selected={mode === "queue"}
+          className={mode === "queue" ? "active" : ""}
+          onClick={() => setMode("queue")}
+        >
+          📋 Cola · varias a la vez
+        </button>
+      </div>
+
+      {mode === "simple" ? <DownloadForm /> : <QueueForm />}
     </>
   );
 }
