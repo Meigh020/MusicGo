@@ -5,7 +5,7 @@ Descargador de música web: pega un enlace de YouTube, elige el formato y descar
 ## Formatos soportados
 
 - ✨ **OPUS** (original, sin recodificar — la mejor calidad posible) ⭐ por defecto
-- 🔊 **MP3** (VBR V0 ~245 kbps)
+- 🔊 **MP3** (320 kbps CBR, el máximo del formato)
 - 🎧 **M4A** (AAC 320 kbps)
 - 💎 **FLAC** (sin pérdida)
 

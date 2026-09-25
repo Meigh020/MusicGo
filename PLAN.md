@@ -157,8 +157,8 @@ automáticamente cuando le pedimos conversión):
 # 1) LA MEJOR CALIDAD: stream original, sin tocar nada
 yt-dlp -f bestaudio "URL"                      # → .opus/.webm o .m4a (cero pérdida)
 
-# 2) MP3 a máxima calidad (variante VBR "V0", ~245 kbps, mejor que 320k CBR en tamaño/calidad)
-yt-dlp -f bestaudio -x --audio-format mp3 --audio-quality 0 "URL"
+# 2) MP3 a máxima calidad (320 kbps CBR, lo máximo que soporta MP3)
+yt-dlp -f bestaudio -x --audio-format mp3 --audio-quality 320k "URL"
 
 # 3) M4A (AAC ~320 kbps; si el original ya es m4a, solo se remuxe, sin recodificar)
 yt-dlp -f bestaudio -x --audio-format m4a "URL"
@@ -170,7 +170,7 @@ yt-dlp -f bestaudio -x --audio-format flac "URL"
 Alternativa: si prefieres convertir tú mismo con ffmpeg (más control):
 
 ```bash
-ffmpeg -i original.webm -c:a libmp3lame -q:a 0  salida.mp3   # MP3 V0
+ffmpeg -i original.webm -c:a libmp3lame -b:a 320k  salida.mp3   # MP3 320k CBR
 ffmpeg -i original.webm -c:a aac -b:a 320k      salida.m4a   # AAC 320k
 ffmpeg -i original.webm -c:a flac -compression_level 8 salida.flac
 ```
@@ -180,11 +180,40 @@ ffmpeg -i original.webm -c:a flac -compression_level 8 salida.flac
 | Formato | Códec | Nuestra mejor calidad | Cuándo usarlo |
 |---|---|---|---|
 | **OPUS** | Opus (original) | La que YouTube da (~160k) — **sin recodificar** | ⭐ Archivar / mejor sonido |
-| **MP3** | MP3 (LAME) | V0 (`-q:a 0`, ~245k) o 320 kbps CBR | Máxima compatibilidad (coches, reproductores viejos) |
+| **MP3** | MP3 (LAME) | **320 kbps CBR** (máximo del formato) | Máxima compatibilidad (coches, reproductores viejos) |
 | **M4A** | AAC | 320 kbps | Buen equilibrio compatibilidad/calidad |
 | **FLAC** | FLAC (sin pérdida) | Solo brilla con fuente sin pérdida (Bandcamp, CDs propios) | Audiófilos con fuente lossless; de YouTube es conversión |
 
-> 💡 **Consejo de archivista:** guarda siempre el original (Opus/M4A) como "maestro".
+### 🤔 ¿Por qué "más pesado" no significa "mejor calidad"?
+
+Duda clásica (¡y buena!). La respuesta corta: **la calidad la pone la FUENTE, no el
+formato ni el tamaño.** El tamaño es una consecuencia de la *compresión*, no de la calidad.
+
+| Formato | Qué es | Tamaño típico (3:33 min) | Calidad real |
+|---|---|---|---|
+| **OPUS** | Códec moderno y eficiente (~160 kbps) | **~3.3 MB** | ⭐ La mejor posible de YouTube: a 160 kbps ya es *transparente* (suena idéntico al original para el oído) |
+| **MP3** | Con pérdida, 320 kbps (máximo del formato) | ~8.1 MB | Buena y compatible, pero **recodificada** desde un audio que ya tenía pérdida |
+| **M4A** | AAC sin pérdida *perceptual*, 320 kbps | ~8.5 MB | Muy buena, también recodificada |
+| **FLAC** | Sin pérdida (comprime como un ZIP) | ~43–45 MB | **No mejora nada desde YouTube**: conserva el mismo audio Opus que ya estaba comprimido, solo que en un archivo gigante |
+
+**El ejemplo real de MusicGo** (canción de 3:33, fuente YouTube):
+
+- OPUS de **3.3 MB** y FLAC de **45 MB** suenan **igual** (ambos derivan del mismo
+  audio Opus de YouTube). La diferencia es que FLAC comprime sin perder datos del
+  audio que recibió, pero esos datos ya eran de "segunda mano".
+- Convertir una fuente con pérdida a FLAC es como hacer un ZIP de un JPEG: el ZIP
+  no recupera los píxeles que el JPEG descartó, solo ocupa más espacio.
+
+**Cuándo el peso SÍ equivale a calidad:** solo cuando la **fuente es sin pérdida**
+(CDs propios, Bandcamp, WAV original). Ahí un FLAC de 45 MB sí vale más que un MP3
+de 8 MB porque conserva cada bit del original.
+
+**Regla de oro para MusicGo:**
+1. Guarda siempre el **OPUS original** como "maestro" (mejor calidad, menor peso).
+2. Usa MP3/M4A para *compatibilidad* (coche, reproductores viejos).
+3. Ofrece FLAC solo como conversión "premium por peso" o cuando la fuente sea lossless.
+
+### 💡 **Consejo de archivista:** guarda siempre el original (Opus/M4A) como "maestro".
 > Si mañana necesitas un MP3 para el coche, conviertes *desde el original*, no desde
 > otra conversión. Convertir una conversión = calidad en cascada que se degrada.
 

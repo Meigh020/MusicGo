@@ -42,14 +42,14 @@ FORMATS = ["opus", "mp3", "m4a", "flac"]
 FORMAT_EXT = {"opus": ".opus", "mp3": ".mp3", "m4a": ".m4a", "flac": ".flac"}
 FORMAT_LABEL = {
     "opus": "OPUS (original, sin recodificar)",
-    "mp3": "MP3 V0 (~245 kbps)",
+    "mp3": "MP3 320 kbps (CBR, máximo del MP3)",
     "m4a": "M4A (AAC 320 kbps)",
     "flac": "FLAC (sin pérdida)",
 }
 
 # Bytes por segundo usados para estimar el tamaño de cada conversión.
 BPS_ESTIMATE = {
-    "mp3": 245_000 / 8,   # VBR V0 (~245 kbps promedio)
+    "mp3": 320_000 / 8,   # MP3 a 320 kbps CBR (bitrate fijo)
     "m4a": 320_000 / 8,   # AAC a 320 kbps (bitrate fijo)
     # Fuente habitual: Opus 48 kHz. WAV 48k/16bit estéreo = 192 KB/s.
     # El FLAC de una fuente "con pérdida" comprime peor (ruido de cuantización),
@@ -59,6 +59,17 @@ BPS_ESTIMATE = {
 
 # Progreso global (app local de un solo usuario)
 progress = {"task_id": None, "percent": 0, "stage": "inactivo"}
+
+
+def _progress_hook_factory(stage: str, base_pct: int, span: int):
+    """Crea un hook de yt-dlp que actualiza el progreso real de la descarga."""
+    def hook(d):
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            if total:
+                pct = base_pct + (d.get("downloaded_bytes", 0) / total) * span
+                progress.update(stage=stage, percent=int(pct))
+    return hook
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +128,7 @@ app.add_middleware(
 # Extracción de información
 # ---------------------------------------------------------------------------
 
-def base_yt_opts(outtmpl: str) -> dict:
+def base_yt_opts(outtmpl: str, progress_stage: str = "Descargando…", progress_base: int = 10, progress_span: int = 25) -> dict:
     opts = {
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
@@ -125,6 +136,7 @@ def base_yt_opts(outtmpl: str) -> dict:
         "no_warnings": True,
         "noplaylist": True,
         "nocheckcertificate": True,
+        "progress_hooks": [_progress_hook_factory(progress_stage, progress_base, progress_span)],
     }
     opts.update(YT_CLIENT_OPTS)
     if COOKIES_FILE.exists():
@@ -220,8 +232,35 @@ def scsearch_first(query: str) -> dict | None:
 # Conversión con ffmpeg
 # ---------------------------------------------------------------------------
 
-def run_ffmpeg(src: Path, dst: Path, target: str) -> None:
-    args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src), "-vn"]
+def download_artwork(url: str | None, uid: str) -> Path | None:
+    """Descarga la carátula para incrustarla en el archivo de audio."""
+    if not url:
+        return None
+    dest = DOWNLOADS_DIR / f"{uid}_art.jpg"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = r.read()
+        if len(data) < 500:
+            return None
+        dest.write_bytes(data)
+        return dest
+    except Exception:
+        return None
+
+
+def run_ffmpeg(src: Path, dst: Path, target: str,
+               title: str | None = None, artist: str | None = None,
+               artwork: Path | None = None) -> None:
+    args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src)]
+    has_art = artwork is not None and artwork.exists()
+    if has_art:
+        args += ["-i", str(artwork)]
+    # Solo la pista de audio del origen (+ la carátula como pista adjunta)
+    args += ["-map", "0:a"]
+    if has_art:
+        args += ["-map", "1:v", "-c:v", "copy", "-disposition:v", "attached_pic"]
+
     if target == "opus":
         if src.suffix.lower() in (".opus", ".webm", ".mkv"):
             args += ["-c:a", "copy"]          # remux sin recodificar = calidad intacta
@@ -233,14 +272,21 @@ def run_ffmpeg(src: Path, dst: Path, target: str) -> None:
         else:
             args += ["-c:a", "aac", "-b:a", "320k"]
     elif target == "mp3":
-        args += ["-c:a", "libmp3lame", "-q:a", "0"]   # VBR V0 (~245 kbps)
+        args += ["-c:a", "libmp3lame", "-b:a", "320k"]   # 320 kbps CBR (máximo)
     elif target == "flac":
         args += ["-c:a", "flac", "-compression_level", "8"]
+
+    if title:
+        args += ["-metadata", f"title={title}"]
+    if artist:
+        args += ["-metadata", f"artist={artist}"]
     args.append(str(dst))
     subprocess.run(args, check=True, capture_output=True)
 
 
-def convert(src: Path, target: str, uid: str) -> Path:
+def convert(src: Path, target: str, uid: str,
+            title: str | None = None, artist: str | None = None,
+            artwork: Path | None = None) -> Path:
     dst = DOWNLOADS_DIR / f"{uid}{FORMAT_EXT[target]}"
     same_file = src.resolve() == dst.resolve()
 
@@ -252,20 +298,30 @@ def convert(src: Path, target: str, uid: str) -> Path:
         or (target == "opus" and src.suffix.lower() in (".opus", ".webm"))
     )
     if already:
-        if same_file:
-            return src
-        shutil.copyfile(src, dst)
-        return dst
+        try:
+            # Intenta escribir metadatos/portada sin recodificar (remux)
+            run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
+            return dst
+        except subprocess.CalledProcessError:
+            if same_file:
+                return src
+            shutil.copyfile(src, dst)
+            return dst
 
     try:
-        run_ffmpeg(src, dst, target)
+        run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
         return dst
     except subprocess.CalledProcessError:
-        # Recurso final: copia directa del archivo tal cual
-        if same_file:
-            return src
-        shutil.copyfile(src, dst)
-        return dst
+        try:
+            # Reintento sin portada (algunos muxers no la soportan)
+            run_ffmpeg(src, dst, target, title=title, artist=artist)
+            return dst
+        except subprocess.CalledProcessError:
+            # Recurso final: copia directa del archivo tal cual
+            if same_file:
+                return src
+            shutil.copyfile(src, dst)
+            return dst
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +333,7 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
     fallback = {"active": False, "located": None}
 
     if not force_fallback:
-        set_progress("Descargando desde YouTube…", 15)
+        set_progress("Descargando desde YouTube…", 10)
         try:
             with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"))) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -287,7 +343,13 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
                     if not cands:
                         raise RuntimeError("No se encontró el archivo descargado")
                     src = cands[0]
-            return src, info, fallback
+            meta = {
+                "title": info.get("title") or "Audio",
+                "artist": info.get("artist") or info.get("uploader") or info.get("channel") or "",
+                "webpage_url": url,
+                "thumbnail": info.get("thumbnail"),
+            }
+            return src, meta, fallback
         except Exception as e:
             if not is_age_gate_error(e):
                 raise
@@ -314,8 +376,9 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
     if not found:
         raise HTTPException(404, f"No se encontró «{title}» de {artist} en SoundCloud para el rescate.")
 
-    set_progress(f"Descargando «{found.get('title', title)}» desde SoundCloud…", 60)
-    with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"))) as ydl:
+    set_progress(f"Descargando «{found.get('title', title)}» desde SoundCloud…", 55)
+    with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"),
+                                        "Descargando desde SoundCloud…", 55, 20)) as ydl:
         info = ydl.extract_info(found["url"], download=True)
         src = Path(ydl.prepare_filename(info))
         if not src.exists():
@@ -330,7 +393,8 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
         "found_title": found.get("title") or title,
         "found_uploader": found.get("uploader") or artist,
     }
-    return src, {"title": title, "artist": artist, "webpage_url": found.get("url")}, fallback
+    return src, {"title": title, "artist": artist, "webpage_url": found.get("url"),
+                 "thumbnail": oem.get("thumbnail_url")}, fallback
 
 
 # ---------------------------------------------------------------------------
@@ -435,15 +499,16 @@ def api_download(req: DownloadRequest):
     progress["task_id"] = task_id
     set_progress("Iniciando…", 5)
 
-    src = meta = final = None
+    src = meta = final = artwork = None
     fallback = {"active": False, "located": None}
     try:
         src, meta, fallback = download_source(req.url, task_id, force_fallback=req.force_fallback)
         set_progress("Convirtiendo audio a " + FORMAT_LABEL[fmt] + "…", 85)
-        final = convert(src, fmt, task_id)
-
         artist = meta.get("artist") or ""
         title = meta.get("title") or "audio"
+        artwork = download_artwork(meta.get("thumbnail"), task_id)
+        final = convert(src, fmt, task_id, title=title, artist=artist, artwork=artwork)
+
         default_name = f"{artist} - {title}" if artist else title
         base_name = sanitize_filename(req.filename or default_name)
         out_name = base_name + FORMAT_EXT[fmt]
@@ -460,7 +525,7 @@ def api_download(req: DownloadRequest):
         set_progress("Listo", 100)
 
         def _cleanup():
-            for p in (final, src):
+            for p in (final, src, artwork):
                 try:
                     if p:
                         p.unlink(missing_ok=True)

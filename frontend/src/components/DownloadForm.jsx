@@ -3,7 +3,7 @@ import { getInfo, downloadTrack, getProgress, formatBytes } from "../api.js";
 
 const FORMAT_META = {
   opus: { icon: "✨", desc: "Original, sin recodificar: la mejor calidad posible" },
-  mp3: { icon: "🔊", desc: "VBR V0 (~245 kbps). Máxima compatibilidad" },
+  mp3: { icon: "🔊", desc: "320 kbps CBR (máximo del MP3). Compatibilidad total" },
   m4a: { icon: "🎧", desc: "AAC 320 kbps. Equilibrio calidad y peso" },
   flac: { icon: "💎", desc: "Sin pérdida. Ideal con fuentes lossless" },
 };
