@@ -22,11 +22,14 @@ export default function DownloadForm() {
   const [status, setStatus] = useState(STATUS.idle);
   const [info, setInfo] = useState(null);
   const [format, setFormat] = useState("opus");
+  const [title, setTitle] = useState("");
+  const [artist, setArtist] = useState("");
   const [filename, setFilename] = useState("");
   const [progress, setProgress] = useState({ percent: 0, stage: "" });
   const [message, setMessage] = useState(null); // {type, text}
   const [result, setResult] = useState(null); // {fileName, sizeBytes, fallback, located, foundTitle, source}
   const pollTimer = useRef(null);
+  const fileNameTouched = useRef(false);
 
   async function analyze() {
     const trimmed = url.trim();
@@ -41,6 +44,9 @@ export default function DownloadForm() {
       const data = await getInfo(trimmed);
       setInfo(data);
       setFormat(data.sizes?.opus?.bytes ? "opus" : "mp3");
+      setTitle(data.title);
+      setArtist(data.artist);
+      fileNameTouched.current = false;
       setFilename(data.artist ? `${data.artist} - ${data.title}` : data.title);
       setStatus(STATUS.ready);
       if (data.fallback) {
@@ -86,6 +92,8 @@ export default function DownloadForm() {
         url: url.trim(),
         format,
         filename: filename.trim() || null,
+        title,
+        artist,
       });
       setResult(r);
       setProgress({ percent: 100, stage: "Listo" });
@@ -111,6 +119,19 @@ export default function DownloadForm() {
     }
   }
 
+  function refreshFilename(newTitle, newArtist) {
+    // Si el usuario no tocó el nombre a mano, se actualiza solo con Artista - Título
+    if (fileNameTouched.current) return;
+    const t = newTitle || "";
+    const a = newArtist || "";
+    setFilename(a ? `${a} - ${t}` : t);
+  }
+
+  function handleFilenameChange(e) {
+    fileNameTouched.current = true;
+    setFilename(e.target.value);
+  }
+
   function reset() {
     stopProgressPolling();
     setStatus(STATUS.idle);
@@ -118,6 +139,7 @@ export default function DownloadForm() {
     setMessage(null);
     setResult(null);
     setProgress({ percent: 0, stage: "" });
+    fileNameTouched.current = false;
   }
 
   const analyzing = status === STATUS.analyzing;
@@ -170,6 +192,38 @@ export default function DownloadForm() {
             </div>
           </div>
 
+          <label className="field-label" htmlFor="audio-title">
+            🏷️ Título (se graba dentro del archivo)
+          </label>
+          <input
+            id="audio-title"
+            className="name-input"
+            value={title}
+            onChange={(e) => {
+              const v = e.target.value;
+              setTitle(v);
+              refreshFilename(v, artist);
+            }}
+            disabled={downloading}
+            placeholder="Sin título"
+          />
+
+          <label className="field-label" htmlFor="audio-artist">
+            🎤 Artista
+          </label>
+          <input
+            id="audio-artist"
+            className="name-input"
+            value={artist}
+            onChange={(e) => {
+              const v = e.target.value;
+              setArtist(v);
+              refreshFilename(title, v);
+            }}
+            disabled={downloading}
+            placeholder="Artista desconocido"
+          />
+
           <label className="field-label" htmlFor="filename">
             ✏️ Nombre del archivo (editable)
           </label>
@@ -177,7 +231,7 @@ export default function DownloadForm() {
             id="filename"
             className="name-input"
             value={filename}
-            onChange={(e) => setFilename(e.target.value)}
+            onChange={handleFilenameChange}
             disabled={downloading}
           />
 

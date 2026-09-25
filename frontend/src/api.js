@@ -27,11 +27,13 @@ export async function getInfo(url) {
 
 /** Descarga la pista y dispara la descarga en el navegador.
  *  Devuelve metadatos de la respuesta (fallback, tamaño real, nombre, etc.) */
-export async function downloadTrack({ url, format, filename, forceFallback = false }) {
+export async function downloadTrack({ url, format, filename, title, artist, forceFallback = false }) {
   const res = await postJSON("/api/download", {
     url,
     format,
     filename: filename || null,
+    title: title !== undefined && title !== null ? title : null,
+    artist: artist !== undefined && artist !== null ? artist : null,
     force_fallback: forceFallback,
   });
 

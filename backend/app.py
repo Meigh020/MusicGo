@@ -409,6 +409,8 @@ class DownloadRequest(BaseModel):
     url: str
     format: str = "opus"
     filename: str | None = None
+    title: str | None = None
+    artist: str | None = None
     force_fallback: bool = False
 
 
@@ -504,20 +506,21 @@ def api_download(req: DownloadRequest):
     try:
         src, meta, fallback = download_source(req.url, task_id, force_fallback=req.force_fallback)
         set_progress("Convirtiendo audio a " + FORMAT_LABEL[fmt] + "…", 85)
-        artist = meta.get("artist") or ""
-        title = meta.get("title") or "audio"
+        # Título y artista: si el usuario los editó, se usan; si no, los del video
+        use_artist = req.artist if req.artist is not None else (meta.get("artist") or "")
+        use_title = req.title if req.title is not None else (meta.get("title") or "audio")
         artwork = download_artwork(meta.get("thumbnail"), task_id)
-        final = convert(src, fmt, task_id, title=title, artist=artist, artwork=artwork)
+        final = convert(src, fmt, task_id, title=use_title, artist=use_artist, artwork=artwork)
 
-        default_name = f"{artist} - {title}" if artist else title
+        default_name = f"{use_artist} - {use_title}" if use_artist else use_title
         base_name = sanitize_filename(req.filename or default_name)
         out_name = base_name + FORMAT_EXT[fmt]
 
         headers = {
             "X-MusicGo-Fallback": "1" if fallback.get("active") else "0",
             "X-MusicGo-Source": "soundcloud" if fallback.get("active") else "youtube",
-            "X-MusicGo-Title": str(title),
-            "X-MusicGo-Artist": str(artist),
+            "X-MusicGo-Title": str(use_title),
+            "X-MusicGo-Artist": str(use_artist),
             "X-MusicGo-Located": str(fallback.get("located") or ""),
             "X-MusicGo-FoundTitle": str(fallback.get("found_title") or ""),
             "X-MusicGo-SizeBytes": str(final.stat().st_size),
