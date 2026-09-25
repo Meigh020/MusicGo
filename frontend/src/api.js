@@ -43,12 +43,11 @@ export async function downloadTrack({ url, format, filename, title, artist, forc
   const located = res.headers.get("X-MusicGo-Located") || "";
   const foundTitle = res.headers.get("X-MusicGo-FoundTitle") || "";
   const sizeBytes = res.headers.get("X-MusicGo-SizeBytes") || "";
-  const title = res.headers.get("X-MusicGo-Title") || "";
 
   // Nombre final: usa el que eligió el usuario (el backend sanitiza).
   const cd = res.headers.get("Content-Disposition") || "";
   const cdName = decodeURIComponent((cd.match(/filename\*=UTF-8''([^;]+)/) || [])[1] || "");
-  const fileName = cdName || `${filename || title}.${format}`;
+  const fileName = cdName || `${filename || title || "audio"}.${format}`;
 
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
