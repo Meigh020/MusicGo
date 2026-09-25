@@ -472,6 +472,21 @@ body {
   line-height: 1.6;
 }
 
+/* ---- Aviso de permiso de descarga múltiple ---- */
+.notice.perm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  background: rgba(250, 204, 21, 0.14);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #7c5200;
+}
+.notice.perm strong { display: block; margin-bottom: 2px; }
+.notice.perm .perm-btn { white-space: nowrap; }
+
 /* ============================================================
    RESPONSIVIDAD
    ============================================================ */

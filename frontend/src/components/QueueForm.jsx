@@ -10,6 +10,7 @@ const FORMAT_META = {
 };
 
 const STORAGE_KEY = "musicgo-queue-v1";
+const PERM_ACK_KEY = "musicgo-perm-ack-v1";
 
 const BADGES = {
   analyzing: { text: "Analizando…", cls: "badge-info" },
@@ -22,6 +23,10 @@ const BADGES = {
 function makeId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Recupera la cola guardada (sobrevive a recargas de la página) */
@@ -61,8 +66,17 @@ export default function QueueForm() {
   const [running, setRunning] = useState(false);
   const [queueProgress, setQueueProgress] = useState({ done: 0, total: 0, stage: "", liveStage: "" });
   const [message, setMessage] = useState(null);
+  const [permAck, setPermAck] = useState(() => {
+    try {
+      return sessionStorage.getItem(PERM_ACK_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const pollRef = useRef(null);
   const runningRef = useRef(false);
+  const msgTimerRef = useRef(null);
+  const permWarnedRef = useRef(false);
 
   // Persistir la cola cuando cambie
   useEffect(() => {
@@ -73,17 +87,52 @@ export default function QueueForm() {
     }
   }, [items]);
 
-  useEffect(() => () => stopPolling(), []);
+  useEffect(() => () => {
+    stopPolling();
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
+  }, []);
 
   const busy = adding || running;
   const pendingCount = items.filter((it) => it.status === "pending" || it.status === "error").length;
   const errorCount = items.filter((it) => it.status === "error").length;
 
+  /** Muestra un aviso temporal (se oculta solo, tiempo real) */
+  function flashMessage(type, text, ms = 6000) {
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current);
+    setMessage({ type, text });
+    msgTimerRef.current = setTimeout(() => setMessage(null), ms);
+  }
+
+  /** Marca el permiso de descarga múltiple como aceptado en esta sesión */
+  function acceptPerm() {
+    setPermAck(true);
+    try {
+      sessionStorage.setItem(PERM_ACK_KEY, "1");
+    } catch {
+      /* sin almacenamiento */
+    }
+  }
+
+  /**
+   * Avisa (una vez por sesión de ejecución) que el navegador pedirá permiso
+   * para descargar varios archivos. Como no existe API para concederlo
+   * programáticamente, solo recordamos al usuario que debe aceptar el diálogo.
+   */
+  function warnMultiDownloadPermission() {
+    if (permAck || permWarnedRef.current) return;
+    permWarnedRef.current = true;
+    flashMessage(
+      "error",
+      "🔔 El navegador puede pedirte permiso para «descargar varios archivos». Cuando aparezca el aviso, elige «Permitir» para que las canciones se guarden.",
+      9000
+    );
+  }
+
   /* ---------- Añadir enlaces (una URL por línea) ---------- */
   async function addUrls() {
     const urls = input.split("\n").map((s) => s.trim()).filter(Boolean);
     if (!urls.length) {
-      setMessage({ type: "error", text: "Pega al menos un enlace de YouTube." });
+      flashMessage("error", "Pega al menos un enlace de YouTube.", 5000);
       return;
     }
     setAdding(true);
@@ -121,11 +170,11 @@ export default function QueueForm() {
     }
     setAdding(false);
     setInput("");
-    setMessage(
-      ok
-        ? { type: "success", text: `${ok} enlace${ok === 1 ? "" : "s"} agregado${ok === 1 ? "" : "s"} a la cola.` }
-        : { type: "error", text: "No se pudo analizar ningún enlace." }
-    );
+    if (ok) {
+      flashMessage("success", `${ok} enlace${ok === 1 ? "" : "s"} agregado${ok === 1 ? "" : "s"} a la cola.`, 5000);
+    } else {
+      flashMessage("error", "No se pudo analizar ningún enlace.", 8000);
+    }
   }
 
   /* ---------- Utilidades de la lista ---------- */
@@ -149,6 +198,8 @@ export default function QueueForm() {
   }
 
   /* ---------- Ejecución secuencial (1 a la vez) ---------- */
+  const BETWEEN_DOWNLOADS_MS = 1500; // pausa suave para que el navegador registre cada descarga/permiso
+
   async function execItems(list) {
     runningRef.current = true;
     setRunning(true);
@@ -160,6 +211,8 @@ export default function QueueForm() {
     setQueueProgress({ done: 0, total, stage: `Iniciando (0/${total})…`, liveStage: "" });
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
+      // Al iniciar cada descarga, pedimos explícitamente el permiso múltiple si falta
+      warnMultiDownloadPermission();
       setItems((prev) =>
         prev.map((it) => (it.id === item.id ? { ...it, status: "downloading", error: null } : it))
       );
@@ -172,6 +225,8 @@ export default function QueueForm() {
           title: item.title,
           artist: item.artist,
         });
+        // Pequeña pausa: el navegador guarda el archivo y avisa el permiso antes de continuar
+        await sleep(BETWEEN_DOWNLOADS_MS);
         setItems((prev) =>
           prev.map((it) =>
             it.id === item.id
@@ -198,21 +253,21 @@ export default function QueueForm() {
     runningRef.current = false;
     setRunning(false);
     setQueueProgress({ done, total, stage: `Listo: ${done} ok, ${failed} con error.`, liveStage: "" });
-    setMessage({
-      type: failed ? "error" : "success",
-      text:
-        total === 1
-          ? failed
-            ? "La descarga falló. Revisa el error del ítem."
-            : "Canción descargada correctamente."
-          : `Cola terminada: ${done} descargada${done === 1 ? "" : "s"}, ${failed} con error.`,
-    });
+    flashMessage(
+      failed ? "error" : "success",
+      total === 1
+        ? failed
+          ? "La descarga falló. Revisa el error del ítem."
+          : "Canción descargada correctamente."
+        : `Cola terminada: ${done} descargada${done === 1 ? "" : "s"}, ${failed} con error.`,
+      failed ? 10000 : 6000
+    );
   }
 
   function downloadAll() {
     const targets = items.filter((it) => it.status === "pending" || it.status === "error");
     if (!targets.length) {
-      setMessage({ type: "error", text: "No hay canciones pendientes en la cola." });
+      flashMessage("error", "No hay canciones pendientes en la cola.", 5000);
       return;
     }
     execItems(targets);
@@ -260,6 +315,22 @@ export default function QueueForm() {
 
   return (
     <section className="card glass queue-card" aria-label="Cola de descargas">
+      {!permAck && (
+        <div className="notice perm">
+          <div>
+            <strong>🔔 Permiso de descarga múltiple</strong>
+            <span>
+              Al descargar varias canciones, el navegador pedirá autorización para
+              guardar múltiples archivos. Cuando aparezca ese aviso, elige{" "}
+              <b>«Permitir»</b>. Esto solo se solicita una vez por sesión.
+            </span>
+          </div>
+          <button className="btn btn-ghost perm-btn" onClick={acceptPerm}>
+            Entendido ✓
+          </button>
+        </div>
+      )}
+
       <div className="queue-add">
         <textarea
           className="queue-textarea"
