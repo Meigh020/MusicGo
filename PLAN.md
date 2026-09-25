@@ -1,7 +1,7 @@
 # MusicGo — Plan del Proyecto (y mini-tutorial)
 
 Un **descargador de música web** que extrae audio desde enlaces (YouTube, etc.)
-y lo convierte a **MP3**, **M4A** y **FLAC**.
+y lo entrega en **MP3**, **M4A**, **FLAC** y **OPUS (original)**.
 
 > ⚠️ **Uso responsable:** esta herramienta solo debe usarse con contenido propio,
 > libre de derechos o con permiso del autor. Descargar música con copyright puede
@@ -14,197 +14,219 @@ y lo convierte a **MP3**, **M4A** y **FLAC**.
 Una aplicación web que corre en tu PC (y que más adelante podrías publicar).
 
 **Flujo del usuario:**
-1. Abre una página web en el navegador (`http://localhost:8000`).
+1. Abre `http://localhost:5173` en el navegador.
 2. Pega un enlace de YouTube.
-3. Elige el formato: MP3, M4A o FLAC.
-4. Pulsa "Descargar" y el archivo cae en su carpeta de descargas. ✅
+3. Elige formato y calidad.
+4. Pulsa "Descargar" y el archivo cae en sus descargas. ✅
 
 ---
 
-## 2. Conceptos básicos (para entender el resto)
+## 2. Conceptos básicos
 
 ### ¿Qué es una "aplicación web"?
-Es un programa con **dos partes** que conversan entre sí:
+Tiene **dos partes** que conversan:
 
 ```
-┌─────────────┐   pide cosas   ┌─────────────┐
-│  FRONTEND   │ ─────────────► │   BACKEND   │
-│  (lo que    │ ◄───────────── │  (lo que    │
-│   ves)      │  da respuestas │   piensa)   │
-└─────────────┘                └─────────────┘
+┌──────────────┐   pide cosas    ┌──────────────┐
+│   FRONTEND   │ ──────────────► │   BACKEND    │
+│  (lo que ves)│ ◄────────────── │ (lo que hace)│
+└──────────────┘                 └──────────────┘
 ```
 
-| Parte | Analogía | Qué hace en MusicGo |
+| Parte | Analogía | En MusicGo |
 |---|---|---|
-| **Frontend** | El **mesero** y el **menú** | Muestra el cuadro para pegar el enlace, los botones de formato y el botón de descarga |
-| **Backend** | La **cocina** | Recibe el enlace, descarga el audio, lo convierte a MP3/M4A/FLAC y te lo sirve |
-
-### ¿Por qué "web" si es solo para tu PC?
-Porque el navegador es la interfaz más cómoda: no hay que instalar nada para usarla,
-se ve bonita sin esfuerzo, y **el mismo backend funciona igual si un día la publicas
-en internet**. Solo cambiaría en qué computadora corre.
+| **Frontend** | El menú y el mesero | La página con el cuadro de enlace, formatos y botón de descarga |
+| **Backend** | La cocina | Descarga el audio y lo convierte, luego te lo sirve |
 
 ---
 
-## 3. Arquitectura de MusicGo
+## 3. Arquitectura (decidida ✅)
 
 ```
-                        TU PC
-┌─────────────────────────────────────────────────────┐
-│  NAVEGADOR  ────►  BACKEND (Python)                 │
-│  (Frontend)       │                                 │
-│                   │  1. Recibe el enlace             │
-│                   │  2. Llama a yt-dlp ──► descarga el audio │
-│                   │  3. Llama a ffmpeg ──► lo convierte     │
-│                   │     a MP3 / M4A / FLAC          │
-│                   │  4. Devuelve el archivo al navegador    │
-└─────────────────────────────────────────────────────┘
+ TU PC
+┌──────────────────────────────────────────────────────────┐
+│  NAVEGADOR                                               │
+│   └─► FRONTEND: React + Vite (página web)               │
+│            │  pide: "descarga este enlace como MP3"      │
+│            ▼                                             │
+│   BACKEND: Python + FastAPI                              │
+│     ├─► yt-dlp  ── descarga el audio original           │
+│     ├─► ffmpeg ── convierte a MP3 / M4A / FLAC          │
+│     └─► devuelve el archivo al navegador                │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### Las piezas del backend
+### Estructura del proyecto (monorepo: un repo, dos carpetas)
 
-| Herramienta | Qué es | Para qué la usamos |
+```
+MusicGo/
+├── backend/                 # Python: FastAPI + yt-dlp + ffmpeg
+│   ├── app.py               # El servidor (endpoints /api/...)
+│   ├── requirements.txt     # Lista de bibliotecas Python
+│   └── downloads/           # Archivos temporales
+├── frontend/                # React + Vite (la página web)
+│   ├── src/
+│   │   ├── App.jsx          # La app React
+│   │   ├── components/      # Botones, formularios, etc.
+│   │   └── ...
+│   └── package.json
+└── PLAN.md
+```
+
+### Cómo se comunican frontend y backend
+
+- En desarrollo: React corre en `localhost:5173` y el backend en `localhost:8000`.
+  Vite tiene un **proxy** configurado: cuando el frontend pide `/api/...`,
+  Vite lo reenvía al backend. (Se configura con 5 líneas, te lo enseño cuando lleguemos).
+- En producción (Fase 4): se compila React a archivos estáticos y el backend los sirve
+  directamente. Una sola URL, cero configuración extra.
+
+### Las piezas
+
+| Herramienta | Rol | Notas |
 |---|---|---|
-| **Python** | Lenguaje de programación | El cerebro del proyecto. Fácil de leer y aprender |
-| **yt-dlp** | Biblioteca Python | Descarga el audio desde YouTube y otros sitios. Es el estándar de la industria |
-| **ffmpeg** | Programa externo | Convierte el audio entre formatos (MP3, M4A, FLAC). Lo usan YouTube, Twitch, etc. |
-| **Framework web** | Biblioteca Python | Crea el servidor web del backend (le da respuestas al frontend) |
+| **Python + FastAPI** | Backend/servidor | FastAPI genera documentación automática de tus endpoints |
+| **yt-dlp** | Descarga de YouTube | Estándar de la industria |
+| **ffmpeg** | Conversión de audio | Ya lo tienes instalado (v9.0.1) |
+| **Node.js + npm** | Ejecutar React | Ya lo tienes (v24) |
+| **React + Vite** | Frontend moderno | Vite = el "compilador" que arranca y empaqueta React |
 
-> 🎓 **Concepto: biblioteca vs programa.** Una *biblioteca* (yt-dlp) es código que
-> "importas" dentro de tu programa. Un *programa externo* (ffmpeg) es un ejecutable
-> que tu programa llama desde la línea de comandos. Ambos los usamos juntos.
-
-### ¿Por qué Python y no JavaScript u otro?
-- **yt-dlp solo es bueno en Python**: es la combinación más probada para este caso.
-- Python es el lenguaje **más fácil de leer**, ideal para alguien que empieza.
-- Hay una comunidad enorme y tutoriales de sobra.
+> ¿Por qué **Vite y no Next.js**? Vite es la forma simple de aprender React puro
+> (una página que pide datos a un backend = "SPA"). Next.js añade cosas de servidor
+> que no necesitamos y complican el aprendizaje. Cuando domines esto, cambiar es fácil.
 
 ---
 
-## 4. El frontend: tus 3 opciones explicadas
+## 4. Calidad de audio: cómo sacar el máximo a cada formato 🔑
 
-Esta es la decisión pendiente. Te explico cada una en cristiano:
+### Regla de oro (la más importante de todo el proyecto)
+> **La calidad la pone la FUENTE, no la conversión.**
+> Recodificar nunca *mejora* el sonido: solo lo conserva (o lo degrada).
+> Por eso el mejor archivo posible es **el original sin recodificar**.
 
-### Opción A — Streamlit (100% Python)
-Streamlit es una biblioteca que **genera la página web automáticamente**.
-En vez de escribir HTML y CSS, escribes Python y Streamlit dibuja la interfaz.
+### ¿Qué audio tiene YouTube realmente?
 
-```python
-# Así de simple se ve (ejemplo ilustrativo)
-enlace = st.text_input("Pega el enlace de YouTube")
-formato = st.selectbox("Formato", ["MP3", "M4A", "FLAC"])
-if st.button("Descargar"):
-    descargar(enlace, formato)
-```
+YouTube **no ofrece FLAC ni audio sin pérdida nunca**. Lo que ofrece es:
 
-✅ **Ventajas:**
-- No necesitas aprender HTML/CSS/JS: todo es Python.
-- Resultado bonito "gratis" (botones, campos, temas).
-- Tiene botón nativo `st.download_button` para que el archivo baje al navegador.
-- Perfecto para hacer un prototipo rápido (semanas → días).
-
-❌ **Desventajas:**
-- Menos control del diseño (es más difícil hacer algo "a medida").
-- Si algún día quieres una web súper personalizada, tendrías que migrar.
-
-### Opción B — Frontend clásico (HTML + CSS + JavaScript)
-Aquí escribes la página "a mano": HTML define el contenido, CSS el estilo
-y JS la interacción. Es **lo que se enseña al aprender web de verdad**.
-
-✅ **Ventajas:**
-- Aprendes los fundamentos reales de la web (te sirve para todo después).
-- Control total del diseño.
-
-❌ **Desventajas:**
-- Más trabajo: son 3 lenguajes nuevos + el backend en Python.
-- Curva de aprendizaje más alta para llegar al mismo MVP.
-
-### Opción C — Framework moderno (React / Vue)
-Framework de JavaScript que usan las empresas para apps grandes.
-
-✅ **Ventajas:** lo más "profesional" que existe hoy.
-❌ **Desventajas:** la curva de aprendizaje **más empinada**. Para un MVP de
-descarga de música es **excesivo**: añade complejidad sin aportar valor real.
-
-### Comparación rápida
-
-| Criterio | A. Streamlit | B. HTML/CSS/JS | C. React/Vue |
+| Stream | Códec | Calidad máx. | Contenedor |
 |---|---|---|---|
-| Lo que aprendes | Python puro | Fundamentos web | Framework moderno |
-| Tiempo hasta el MVP | Días | Semanas | Meses |
-| Diseño personalizado | Limitado | Total | Total |
-| Dificultad inicial | ⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| "bestaudio" | **Opus** | ~160 kbps | `.webm` / `.opus` |
+| alternativa | AAC | ~256 kbps | `.m4a` |
+
+Entonces, de YouTube **lo máximo que puedes obtener es ese Opus/AAC original**.
+Cualquier FLAC que "conviertas" desde ahí es FLAC **de mentira**: un archivo enorme
+que suena igual que el Opus original (o peor). No puedes crear calidad que no existe.
+
+### Mi opinión sobre "Opus directo" 🎯
+
+**Es la jugada correcta, y la mejor decisión técnica del proyecto.** Razones:
+
+1. **Opus es el códec más moderno y eficiente.** A ~160 kbps ya es *transparente*
+   (suena idéntico al original para el oído humano). Supera al MP3 a 320 kbps y al AAC a 256 kbps.
+2. **Cero pérdida por recodificación**: al no convertir, el archivo es `bit-perfect`
+   respecto a lo que YouTube te dio. Es la **mejor calidad posible desde YouTube**, punto.
+3. **Compatibilidad moderna**: VLC, foobar2000, Android, iOS, Spotify-adjuntos,
+   reproductores de alta fidelidad (Sony Walkman, etc.) lo leen sin problema.
+   Lo único que a veces no lo lee: radios de coche antiguas.
+
+**Conclusión:** en MusicGo, la opción "**Mejor calidad (original, Sin recodificar)**"
+será la **opción por defecto y recomendada**. Guardará el `.opus` (o `.m4a`) tal cual.
+Lo demás (MP3/M4A/FLAC) son *conversiones* que ofrecerás para compatibilidad.
+
+### Matriz de formatos: método y comandos exactos
+
+Usaremos **yt-dlp para descargar** y **ffmpeg para convertir** (yp-dlp llama a ffmpeg
+automáticamente cuando le pedimos conversión):
+
+```bash
+# 1) LA MEJOR CALIDAD: stream original, sin tocar nada
+yt-dlp -f bestaudio "URL"                      # → .opus/.webm o .m4a (cero pérdida)
+
+# 2) MP3 a máxima calidad (variante VBR "V0", ~245 kbps, mejor que 320k CBR en tamaño/calidad)
+yt-dlp -f bestaudio -x --audio-format mp3 --audio-quality 0 "URL"
+
+# 3) M4A (AAC ~320 kbps; si el original ya es m4a, solo se remuxe, sin recodificar)
+yt-dlp -f bestaudio -x --audio-format m4a "URL"
+
+# 4) FLAC (compresión nivel 8: equilibrio tamaño/velocidad; 12 = archivo más pequeño)
+yt-dlp -f bestaudio -x --audio-format flac "URL"
+```
+
+Alternativa: si prefieres convertir tú mismo con ffmpeg (más control):
+
+```bash
+ffmpeg -i original.webm -c:a libmp3lame -q:a 0  salida.mp3   # MP3 V0
+ffmpeg -i original.webm -c:a aac -b:a 320k      salida.m4a   # AAC 320k
+ffmpeg -i original.webm -c:a flac -compression_level 8 salida.flac
+```
+
+### Resumen por formato
+
+| Formato | Códec | Nuestra mejor calidad | Cuándo usarlo |
+|---|---|---|---|
+| **OPUS** | Opus (original) | La que YouTube da (~160k) — **sin recodificar** | ⭐ Archivar / mejor sonido |
+| **MP3** | MP3 (LAME) | V0 (`-q:a 0`, ~245k) o 320 kbps CBR | Máxima compatibilidad (coches, reproductores viejos) |
+| **M4A** | AAC | 320 kbps | Buen equilibrio compatibilidad/calidad |
+| **FLAC** | FLAC (sin pérdida) | Solo brilla con fuente sin pérdida (Bandcamp, CDs propios) | Audiófilos con fuente lossless; de YouTube es conversión |
+
+> 💡 **Consejo de archivista:** guarda siempre el original (Opus/M4A) como "maestro".
+> Si mañana necesitas un MP3 para el coche, conviertes *desde el original*, no desde
+> otra conversión. Convertir una conversión = calidad en cascada que se degrada.
 
 ---
 
-## 5. Mi recomendación
+## 5. Plan por fases
 
-**Empieza con la Opción B — frontend clásico (HTML/CSS/JS)** con este matiz:
+### Fase 0 — Preparar el entorno ✅ (tu PC ya está lista)
+- Python 3.14 ✅ · Node 24 ✅ · npm 11 ✅ · ffmpeg 9 ✅ · Git ✅
+- Falta: crear la estructura `backend/` + `frontend/` y el primer "hola mundo" de ambos.
 
-1. **Primero, haz el 100% del backend en Python** (FastAPI + yt-dlp + ffmpeg)
-   probándolo con una página HTML mínima. Es la parte difícil y la más valiosa.
-2. **Después construye el frontend clásico.** Es lo que te dará bases reales de web.
+### Fase 1 — MVP: la tubería completa
+- **Backend**: endpoint `POST /api/download` que recibe `{url, formato}` y devuelve el archivo.
+  Empezamos con **OPUS (original)** y **MP3**.
+- **Frontend**: React con input de enlace + selector + botón, descarga vía `fetch` + `blob`.
+- Meta: pegar enlace → cae el archivo. ✅
 
-¿Por qué no Streamlit si es más rápido? Porque has dicho que "no sabes nada de web"
-y **estás aprendiendo**: la Opción B te enseña lo fundamental y sigue siendo
-sencilla. Si prefieres llegar al resultado funcional en el menor tiempo posible,
-Streamlit es la alternativa legítima (y podemos migrar el backend intacto después,
-porque el backend es el mismo en ambas).
-
-> 💡 Dato clave: el **backend no cambia** entre opciones. Elegir frontend no es
-> una apuesta irreversible. Si un día te cansas del clásico, React usa los mismos
-> fundamentos de HTML/CSS/JS que ya sabrás.
-
----
-
-## 6. Plan por fases
-
-### Fase 0 — Preparar el entorno (hoy)
-- Instalar Python, Git ya lo tenemos, y ffmpeg.
-- Crear la estructura del proyecto y el primer commit.
-
-### Fase 1 — MVP (el "esqueleto" que funciona)
-- Backend que recibe un enlace y descarga el audio en **MP3**.
-- Frontend mínimo: cuadro de texto + botón + formato MP3.
-- Validar de punta a punta: pego enlace → sale MP3. ✅
-- Agregar formato **M4A** (es casi gratis con ffmpeg).
-
-### Fase 2 — Formato FLAC y calidad
-- Agregar **FLAC** (sin pérdida, archivo más pesado).
-- Selector de calidad (por ejemplo: mejor calidad / 128 kbps / 320 kbps para MP3).
+### Fase 2 — Todos los formatos + calidad
+- Agregar **M4A**, **FLAC** y selector de calidad (MP3 V0 / 320k / 128k…).
+- **Progreso real** en la página (la conversión tarda): aviso por polling o WebSocket.
+- Metadatos (título, artista, carátula) cuando la fuente los tenga.
 
 ### Fase 3 — Pulido
-- Progreso de descarga visible en la página.
 - Mensajes de error claros (enlace inválido, video privado, sin conexión).
-- Diseño con logo y colores de "MusicGo".
+- Diseño con estilo y logo de MusicGo (CSS + Tailwind o CSS simple, lo decidimos).
+- Cola de varias descargas a la vez.
 
-### Fase 4 — (Opcional, más adelante) Publicar en internet
-- Requiere un servidor (VPS) con mayor capacidad, un dominio y HTTPS.
-- Ojo: muchos proveedores en la nube **prohíben** yt-dlp en sus servidores;
-  habría que elegir un VPS autónomo (por ejemplo Hetzner, DigitalOcean, Oracle Cloud).
-- Se puede automatizar con `systemd` o Docker.
-
-> Empezamos en local y el código ya quedará listo para subir después.
+### Fase 4 — (Opcional, futuro) Publicar en internet
+- VPS (Hetzner / DigitalOcean / Oracle Cloud) + Docker + dominio + HTTPS.
+- ⚠️ Muchos proveedores en la nube **prohíben** yt-dlp: necesita VPS autónomo.
+- Nuestro backend no cambia; solo se sirve el React compilado desde el mismo servidor.
 
 ---
 
-## 7. Herramientas que instalaremos
+## 6. Herramientas instaladas vs pendientes
 
-| Herramienta | Para qué |
+| Herramienta | Estado |
 |---|---|
-| **Python 3.12+** | Lenguaje del backend |
-| **ffmpeg** | Conversión de audio (MP3/M4A/FLAC) |
-| **pip** | Instalador de bibliotecas de Python (viene con Python) |
-| **Git** | Control de versiones (ya lo tienes ✅) |
-| **VS Code** | Editor de código (recomendado) |
-| **yt-dlp + FastAPI** | Bibliotecas Python que instalaremos vía pip |
+| Python 3.14.7 | ✅ instalado |
+| Node.js 24 / npm 11 | ✅ instalado |
+| ffmpeg 9.0.1 | ✅ instalado |
+| Git 2.55 | ✅ instalado |
+| yt-dlp, FastAPI (Python) | 📦 se instalan con pip |
+| React + Vite | 📦 se crean con `npm create vite` |
 
 ---
 
-## 8. Resumen en una frase
+## 7. Resumen y decisiones tomadas
 
-> **MusicGo = Python (backend) + yt-dlp (descarga) + ffmpeg (convierte) +
-> un frontend que tú elegirás (Streamlit, HTML/CSS/JS o React) — corriendo en tu PC.**
+| Decisión | Elección |
+|---|---|
+| Fuente de música | Enlaces (YouTube) con yt-dlp |
+| Backend | Python + FastAPI |
+| Conversión | ffmpeg |
+| Frontend | **React + Vite** (JavaScript, sin TypeScript por ahora) |
+| Mejor calidad por defecto | **OPUS original sin recodificar** |
+| Formato final | MP3 · M4A · FLAC · OPUS (original) |
+| Uso inicial | Local en tu PC; publicación posible en el futuro |
 
-**Decisión pendiente para ti:** ¿qué frontend elegimos: **A (Streamlit)**,
-**B (HTML/CSS/JS)** o **C (React/Vue)**?
+**Siguiente paso:** Fase 1 — crear `backend/` y `frontend/` y hacer que se digan "hola".

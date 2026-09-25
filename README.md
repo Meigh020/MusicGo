@@ -7,6 +7,7 @@ Descargador de música web: pega un enlace, elige el formato y descarga.
 - 🔊 MP3
 - 🎧 M4A
 - 💎 FLAC (sin pérdida)
+- ✨ OPUS (original, mejor calidad — sin recodificar)
 
 ## Estado del proyecto
 
@@ -15,10 +16,10 @@ de conceptos web y el plan por fases.
 
 ## Stack
 
-- Backend: Python
+- Backend: Python + FastAPI
 - Descarga: yt-dlp
 - Conversión: ffmpeg
-- Frontend: *por decidir* (Streamlit / HTML+CSS+JS / React)
+- Frontend: React + Vite
 
 ## ⚠️ Uso responsable
 
