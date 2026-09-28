@@ -95,6 +95,9 @@
 
 html, body, #root { min-height: 100%; }
 
+/* Base tipográfica: 18px (+2px) para que todo se vea más grande y respire */
+html { font-size: 18px; }
+
 body {
   margin: 0;
   font-family: system-ui, "Segoe UI", Roboto, "Inter", Arial, sans-serif;
@@ -125,7 +128,7 @@ body {
 .content {
   flex: 1;
   width: 100%;
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 26px 20px 70px;
 }
@@ -141,15 +144,17 @@ body {
   transition: background 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
 }
 
-/* ---- Barra superior ---- */
+/* ---- Barra superior (ancho completo, pegada al borde superior) ---- */
 .nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
+  width: 100%;
   padding: 14px 22px;
-  margin-top: 10px;
+  margin-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 .brand {
   font-weight: 800;
@@ -562,6 +567,19 @@ body {
 .icon-btn:hover:not(:disabled) { background: var(--glass-hover); transform: translateY(-1px); }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.danger { color: var(--err-ink); }
+.icon-btn .bi { font-size: 1.05rem; line-height: 1; display: block; }
+
+/* Íconos Bootstrap dentro de textos/botones: alineación vertical */
+.queue-size .bi,
+.queue-fallback .bi,
+.notice .bi,
+.btn .bi,
+.f-name .bi,
+.queue-thumb-empty .bi,
+.theme-toggle .bi {
+  vertical-align: -0.125em;
+}
+.theme-toggle .bi { font-size: 1.1rem; }
 
 .queue-empty {
   margin-top: 18px;

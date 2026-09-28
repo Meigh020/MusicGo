@@ -2,10 +2,10 @@ import { useState, useRef } from "react";
 import { getInfo, downloadTrack, getProgress, formatBytes } from "../api.js";
 
 const FORMAT_META = {
-  opus: { icon: "✨", desc: "Original, sin recodificar: la mejor calidad posible" },
-  mp3: { icon: "🔊", desc: "320 kbps CBR (máximo del MP3). Compatibilidad total" },
-  m4a: { icon: "🎧", desc: "AAC 320 kbps. Equilibrio calidad y peso" },
-  flac: { icon: "💎", desc: "Sin pérdida. Ideal con fuentes lossless" },
+  opus: { icon: "bi-music-note-beamed", desc: "Original" },
+  mp3: { icon: "bi-volume-up-fill", desc: "320 kbps" },
+  m4a: { icon: "bi-headphones", desc: "AAC 320 kbps" },
+  flac: { icon: "bi-gem", desc: "Sin pérdida" },
 };
 
 const STATUS = {
@@ -99,11 +99,17 @@ export default function DownloadForm() {
       setProgress({ percent: 100, stage: "Listo" });
       setStatus(STATUS.success);
       const target = FORMAT_META[format];
-      const noticeText = `✅ «${r.fileName}» descargado · tamaño real: ${formatBytes(r.sizeBytes)} · ${target.icon} ${target.desc}`;
+      const noticeText = (
+        <>
+          <i className="bi bi-check-circle-fill" aria-hidden="true"></i> «{r.fileName}» descargado ·
+          tamaño real: {formatBytes(r.sizeBytes)} ·{" "}
+          <i className={`bi ${target.icon}`} aria-hidden="true"></i> {target.desc}
+        </>
+      );
       setMessage({
         type: r.fallback ? "fallback" : "success",
         title: r.fallback
-          ? "⚡ Restricción de edad (+18) evadida con éxito"
+          ? "Restricción de edad (+18) evadida con éxito"
           : undefined,
         text: r.fallback
           ? `MusicGo encontró la canción oficial para descargarla sin requerir inicio de sesión.`
@@ -170,7 +176,7 @@ export default function DownloadForm() {
           </button>
         ) : (
           <button className="btn btn-ghost" onClick={reset}>
-            ↺ Nuevo
+            <i className="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Nuevo
           </button>
         )}
       </div>
@@ -256,7 +262,7 @@ export default function DownloadForm() {
                     disabled={downloading}
                   />
                   <span className="f-name">
-                    {meta.icon} {key.toUpperCase()}
+                    <i className={`bi ${meta.icon}`} aria-hidden="true"></i> {key.toUpperCase()}
                   </span>
                   <span className="f-size">
                     ≈ {size?.label ? size.label : "calculando…"}

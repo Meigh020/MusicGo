@@ -39,24 +39,31 @@ export default function App() {
         <div className="blob blob-4" />
       </div>
 
-      <div className="content">
-        <nav className="nav glass">
-          <Link to="/" className="brand">
-            <em>🎵</em> MusicGo
-          </Link>
-          <div className="nav-links">
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={toggleTheme}
-              aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              title={theme === "dark" ? "Apagar la luz (modo claro)" : "Encender la luz (modo oscuro)"}
-            >
-              {theme === "dark" ? "☀️" : "🌙"}
-            </button>
-          </div>
-        </nav>
+      <nav className="nav glass">
+        <Link to="/" className="brand">
+          <em>
+            <i className="bi bi-music-note-beamed" aria-hidden="true"></i>
+          </em>{" "}
+          MusicGo
+        </Link>
+        <div className="nav-links">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+            title={theme === "dark" ? "Apagar la luz (modo claro)" : "Encender la luz (modo oscuro)"}
+          >
+            {theme === "dark" ? (
+              <i className="bi bi-sun" aria-hidden="true"></i>
+            ) : (
+              <i className="bi bi-moon-stars" aria-hidden="true"></i>
+            )}
+          </button>
+        </div>
+      </nav>
 
+      <div className="content">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/privacidad" element={<Privacy />} />

@@ -3,10 +3,10 @@ import { getInfo, downloadTrack, getProgress, formatBytes } from "../api.js";
 
 // Formato por ítem (mismos que en el modo Simple)
 const FORMAT_META = {
-  opus: { icon: "✨", label: "OPUS", desc: "Original, sin recodificar", ext: "opus" },
-  mp3: { icon: "🔊", label: "MP3", desc: "320 kbps CBR", ext: "mp3" },
-  m4a: { icon: "🎧", label: "M4A", desc: "AAC 320 kbps", ext: "m4a" },
-  flac: { icon: "💎", label: "FLAC", desc: "Sin pérdida", ext: "flac" },
+  opus: { icon: "bi-music-note-beamed", label: "OPUS", desc: "Original, sin recodificar", ext: "opus" },
+  mp3: { icon: "bi-volume-up-fill", label: "MP3", desc: "320 kbps CBR", ext: "mp3" },
+  m4a: { icon: "bi-headphones", label: "M4A", desc: "AAC 320 kbps", ext: "m4a" },
+  flac: { icon: "bi-gem", label: "FLAC", desc: "Sin pérdida", ext: "flac" },
 };
 
 const STORAGE_KEY = "musicgo-queue-v1";
@@ -123,7 +123,7 @@ export default function QueueForm() {
     permWarnedRef.current = true;
     flashMessage(
       "error",
-      "🔔 El navegador puede pedirte permiso para «descargar varios archivos». Cuando aparezca el aviso, elige «Permitir» para que las canciones se guarden.",
+      "El navegador puede pedirte permiso para «descargar varios archivos». Cuando aparezca el aviso, elige «Permitir» para que las canciones se guarden.",
       9000
     );
   }
@@ -318,7 +318,7 @@ export default function QueueForm() {
       {!permAck && (
         <div className="notice perm">
           <div>
-            <strong>🔔 Permiso de descarga múltiple</strong>
+            <strong><i className="bi bi-bell" aria-hidden="true"></i> Permiso de descarga múltiple</strong>
             <span>
               Al descargar varias canciones, el navegador pedirá autorización para
               guardar múltiples archivos. Cuando aparezca ese aviso, elige{" "}
@@ -346,7 +346,9 @@ export default function QueueForm() {
               <span className="spinner" /> Analizando…
             </>
           ) : (
-            "➕ Añadir a la cola"
+            <>
+              <i className="bi bi-plus-circle" aria-hidden="true"></i> Añadir a la cola
+            </>
           )}
         </button>
       </div>
@@ -355,11 +357,11 @@ export default function QueueForm() {
         <>
           <div className="queue-toolbar">
             <button className="btn" onClick={downloadAll} disabled={running || pendingCount === 0}>
-              ⬇️ Descargar ({pendingCount})
+              <i className="bi bi-download" aria-hidden="true"></i> Descargar ({pendingCount})
             </button>
             {errorCount > 0 && (
               <button className="btn btn-ghost" onClick={retryFailed} disabled={running}>
-                ↻ Reintentar fallidas ({errorCount})
+                <i className="bi bi-arrow-repeat" aria-hidden="true"></i> Reintentar fallidas ({errorCount})
               </button>
             )}
             <button
@@ -369,7 +371,7 @@ export default function QueueForm() {
               }}
               disabled={running}
             >
-              🗑 Vaciar
+              <i className="bi bi-trash" aria-hidden="true"></i> Vaciar
             </button>
 
             {/* Selector de formato por lote: aplica el formato a todos los pendientes */}
@@ -404,7 +406,7 @@ export default function QueueForm() {
               >
                 {Object.entries(FORMAT_META).map(([k, f]) => (
                   <option key={k} value={k}>
-                    {f.icon} {f.label}
+                    {f.label}
                   </option>
                 ))}
               </select>
@@ -418,7 +420,9 @@ export default function QueueForm() {
                   {it.info?.thumbnail ? (
                     <img className="queue-thumb" src={it.info.thumbnail} alt="" loading="lazy" />
                   ) : (
-                    <div className="queue-thumb queue-thumb-empty">🎵</div>
+                    <div className="queue-thumb queue-thumb-empty">
+                      <i className="bi bi-music-note-beamed" aria-hidden="true"></i>
+                    </div>
                   )}
 
                   <div className="queue-main">
@@ -440,7 +444,7 @@ export default function QueueForm() {
                       >
                         {Object.entries(FORMAT_META).map(([k, f]) => (
                           <option key={k} value={k}>
-                            {f.icon} {f.label}
+                            {f.label}
                           </option>
                         ))}
                       </select>
@@ -471,10 +475,15 @@ export default function QueueForm() {
                     <div className="queue-state">
                       <span className={`badge2 ${BADGES[it.status].cls}`}>{BADGES[it.status].text}</span>
                       {it.status === "done" && it.realBytes ? (
-                        <span className="queue-size">📦 {formatBytes(it.realBytes)} real</span>
+                        <span className="queue-size">
+                        <i className="bi bi-box-seam" aria-hidden="true"></i> {formatBytes(it.realBytes)} real
+                      </span>
                       ) : null}
                       {it.status === "done" && it.usedFallback ? (
-                        <span className="queue-fallback">⚡ rescatada vía SoundCloud (+18)</span>
+                        <span className="queue-fallback">
+                          <i className="bi bi-lightning-charge-fill" aria-hidden="true"></i> rescatada vía
+                          SoundCloud (+18)
+                        </span>
                       ) : null}
                       {it.status === "error" ? <span className="queue-error">{it.error}</span> : null}
                     </div>
@@ -482,7 +491,7 @@ export default function QueueForm() {
 
                   <div className="queue-actions">
                     <button className="icon-btn" title="Subir" onClick={() => moveItem(it.id, -1)} disabled={running || idx === 0}>
-                      ↑
+                      <i className="bi bi-arrow-up" aria-hidden="true"></i>
                     </button>
                     <button
                       className="icon-btn"
@@ -490,13 +499,13 @@ export default function QueueForm() {
                       onClick={() => moveItem(it.id, 1)}
                       disabled={running || idx === items.length - 1}
                     >
-                      ↓
+                      <i className="bi bi-arrow-down" aria-hidden="true"></i>
                     </button>
                     <button className="icon-btn" title="Descargar esta" onClick={() => downloadOne(it.id)} disabled={running}>
-                      ⬇
+                      <i className="bi bi-download" aria-hidden="true"></i>
                     </button>
                     <button className="icon-btn danger" title="Quitar" onClick={() => removeItem(it.id)} disabled={running}>
-                      ✕
+                      <i className="bi bi-x" aria-hidden="true"></i>
                     </button>
                   </div>
                 </div>
