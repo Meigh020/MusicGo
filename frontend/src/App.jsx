@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Route, Routes, NavLink, Link } from "react-router-dom";
 import DownloadForm from "./components/DownloadForm.jsx";
 import QueueForm from "./components/QueueForm.jsx";
@@ -6,7 +6,30 @@ import CookieBanner from "./components/CookieBanner.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 
+const THEME_KEY = "musicgo-theme";
+
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      const stored = localStorage.getItem(THEME_KEY);
+      return stored === "dark" ? "dark" : "light";
+    } catch {
+      return "light";
+    }
+  });
+
+  // Aplica el tema al <html> (data-theme) y lo persiste
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* sin almacenamiento: ignorar */
+    }
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
   return (
     <div className="app">
       <div className="blobs" aria-hidden="true">
@@ -31,6 +54,15 @@ export default function App() {
             <NavLink to="/terminos" className={({ isActive }) => (isActive ? "active" : "")}>
               Términos
             </NavLink>
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              title={theme === "dark" ? "Apagar la luz (modo claro)" : "Encender la luz (modo oscuro)"}
+            >
+              {theme === "dark" ? "☀️ Modo claro" : "🌙 Modo oscuro"}
+            </button>
           </div>
         </nav>
 

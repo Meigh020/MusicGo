@@ -371,6 +371,44 @@ export default function QueueForm() {
             >
               🗑 Vaciar
             </button>
+
+            {/* Selector de formato por lote: aplica el formato a todos los pendientes */}
+            <label className="queue-fmt-batch">
+              <span className="queue-fmt-batch-label">Formato para todas:</span>
+              <select
+                className="queue-fmt"
+                onChange={(e) => {
+                  const fmt = e.target.value;
+                  const affected = items.filter(
+                    (it) => it.status === "pending" || it.status === "error"
+                  ).length;
+                  setItems(
+                    items.map((it) => {
+                      if (it.status === "pending" || it.status === "error") {
+                        return { ...it, format: fmt };
+                      }
+                      return it;
+                    })
+                  );
+                  if (affected > 0) {
+                    flashMessage(
+                      "success",
+                      `${FORMAT_META[fmt].label} aplicado a ${affected} canción${affected === 1 ? "" : "es"} pendiente${affected === 1 ? "" : "s"}.`,
+                      4000
+                    );
+                  }
+                }}
+                defaultValue={items.length > 0 ? items[0].format : "opus"}
+                disabled={running}
+                aria-label="Formato para todas las canciones pendientes"
+              >
+                {Object.entries(FORMAT_META).map(([k, f]) => (
+                  <option key={k} value={k}>
+                    {f.icon} {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="queue-list">
