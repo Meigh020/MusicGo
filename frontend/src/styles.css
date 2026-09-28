@@ -95,8 +95,8 @@
 
 html, body, #root { min-height: 100%; }
 
-/* Base tipográfica: 20px para que todo se vea más grande y respire */
-html { font-size: 20px; }
+/* Base tipográfica: 24px para que todo se vea claramente más grande */
+html { font-size: 24px; }
 
 body {
   margin: 0;
@@ -128,7 +128,7 @@ body {
 .content {
   flex: 1;
   width: 100%;
-  max-width: 1140px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 26px 20px 70px;
 }
@@ -557,8 +557,8 @@ body {
   border: 1px solid var(--glass-border);
   background: var(--input-bg);
   color: var(--ink);
-  width: 30px; height: 30px;
-  border-radius: 9px;
+  width: 40px; height: 40px;
+  border-radius: 10px;
   font-size: 0.9rem;
   font-weight: 800;
   line-height: 1;
@@ -567,7 +567,7 @@ body {
 .icon-btn:hover:not(:disabled) { background: var(--glass-hover); transform: translateY(-1px); }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.danger { color: var(--err-ink); }
-.icon-btn .bi { font-size: 1.05rem; line-height: 1; display: block; }
+.icon-btn .bi { font-size: 1.2rem; line-height: 1; display: block; }
 
 /* Íconos Bootstrap dentro de textos/botones: alineación vertical */
 .queue-size .bi,
