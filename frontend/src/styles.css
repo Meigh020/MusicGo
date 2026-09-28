@@ -95,8 +95,8 @@
 
 html, body, #root { min-height: 100%; }
 
-/* Base tipográfica: 18px (+2px) para que todo se vea más grande y respire */
-html { font-size: 18px; }
+/* Base tipográfica: 20px para que todo se vea más grande y respire */
+html { font-size: 20px; }
 
 body {
   margin: 0;
@@ -128,7 +128,7 @@ body {
 .content {
   flex: 1;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1140px;
   margin: 0 auto;
   padding: 26px 20px 70px;
 }
