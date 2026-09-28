@@ -326,7 +326,7 @@ export default function QueueForm() {
             </span>
           </div>
           <button className="btn btn-ghost perm-btn" onClick={acceptPerm}>
-            Entendido ✓
+            Entendido
           </button>
         </div>
       )}
@@ -355,7 +355,7 @@ export default function QueueForm() {
         <>
           <div className="queue-toolbar">
             <button className="btn" onClick={downloadAll} disabled={running || pendingCount === 0}>
-              ⬇️ Descargar todo ({pendingCount})
+              ⬇️ Descargar ({pendingCount})
             </button>
             {errorCount > 0 && (
               <button className="btn btn-ghost" onClick={retryFailed} disabled={running}>

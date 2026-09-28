@@ -25,6 +25,16 @@ export async function getInfo(url) {
   return res.json();
 }
 
+/** Descifra una cabecera percent-encoded (por si trae acentos/emojis/UTF-8) */
+function decodeHeader(value) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value; // ya era texto plano
+  }
+}
+
 /** Descarga la pista y dispara la descarga en el navegador.
  *  Devuelve metadatos de la respuesta (fallback, tamaño real, nombre, etc.) */
 export async function downloadTrack({ url, format, filename, title, artist, forceFallback = false }) {
@@ -40,8 +50,8 @@ export async function downloadTrack({ url, format, filename, title, artist, forc
   const blob = await res.blob();
   const fallback = res.headers.get("X-MusicGo-Fallback") === "1";
   const source = res.headers.get("X-MusicGo-Source") || "youtube";
-  const located = res.headers.get("X-MusicGo-Located") || "";
-  const foundTitle = res.headers.get("X-MusicGo-FoundTitle") || "";
+  const located = decodeHeader(res.headers.get("X-MusicGo-Located"));
+  const foundTitle = decodeHeader(res.headers.get("X-MusicGo-FoundTitle"));
   const sizeBytes = res.headers.get("X-MusicGo-SizeBytes") || "";
 
   // Nombre final: usa el que eligió el usuario (el backend sanitiza).

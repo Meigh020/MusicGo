@@ -165,7 +165,7 @@ export default function DownloadForm() {
                 <span className="spinner" /> Analizando
               </>
             ) : (
-              "🔍 Analizar"
+              "Buscar"
             )}
           </button>
         ) : (
@@ -193,7 +193,7 @@ export default function DownloadForm() {
           </div>
 
           <label className="field-label" htmlFor="audio-title">
-            🏷️ Título (se graba dentro del archivo)
+            Título (se graba dentro del archivo)
           </label>
           <input
             id="audio-title"
@@ -209,7 +209,7 @@ export default function DownloadForm() {
           />
 
           <label className="field-label" htmlFor="audio-artist">
-            🎤 Artista
+            Artista
           </label>
           <input
             id="audio-artist"
@@ -225,7 +225,7 @@ export default function DownloadForm() {
           />
 
           <label className="field-label" htmlFor="filename">
-            ✏️ Nombre del archivo (editable)
+            Nombre del archivo (editable)
           </label>
           <input
             id="filename"
@@ -270,7 +270,7 @@ export default function DownloadForm() {
 
           {!info.fallback && info.sizes?.opus?.bytes == null && (
             <p className="track-meta" style={{ marginTop: 10 }}>
-              💡 El tamaño de OPUS se muestra como estimado porque el stream no lo anuncia;
+              El tamaño de OPUS se muestra como estimado porque el stream no lo anuncia;
               los demás formatos se calculan con la duración exacta.
             </p>
           )}
@@ -282,7 +282,7 @@ export default function DownloadForm() {
                   <span className="spinner" /> Descargando…
                 </>
               ) : (
-                `⬇️ Descargar en ${format.toUpperCase()}`
+                `Descargar en ${format.toUpperCase()}`
               )}
             </button>
           </div>

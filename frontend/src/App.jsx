@@ -45,15 +45,6 @@ export default function App() {
             <em>🎵</em> MusicGo
           </Link>
           <div className="nav-links">
-            <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
-              Descargar
-            </NavLink>
-            <NavLink to="/privacidad" className={({ isActive }) => (isActive ? "active" : "")}>
-              Privacidad
-            </NavLink>
-            <NavLink to="/terminos" className={({ isActive }) => (isActive ? "active" : "")}>
-              Términos
-            </NavLink>
             <button
               type="button"
               className="theme-toggle"
@@ -61,7 +52,7 @@ export default function App() {
               aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
               title={theme === "dark" ? "Apagar la luz (modo claro)" : "Encender la luz (modo oscuro)"}
             >
-              {theme === "dark" ? "☀️ Modo claro" : "🌙 Modo oscuro"}
+              {theme === "dark" ? "☀️" : "🌙"}
             </button>
           </div>
         </nav>
@@ -75,8 +66,8 @@ export default function App() {
 
       <footer className="footer">
         <p>
-          MusicGo · contenido de audio que tengas derecho a descargar ·{" "}
-          <Link to="/privacidad">Privacidad</Link> ·{" "}
+          Revisa las reglas de {" "}
+          <Link to="/privacidad">Privacidad</Link> y{" "}
           <Link to="/terminos">Términos</Link>
         </p>
       </footer>
@@ -91,12 +82,11 @@ function Home() {
   return (
     <>
       <header className="hero">
-        <h1>🎧 Descarga música en la mejor calidad</h1>
+        <h1>Descarga música en la mejor calidad</h1>
         <p>
           Pega un enlace de YouTube, elige formato y descarga:{" "}
-          <b>OPUS</b> (original) · <b>MP3</b> · <b>M4A</b> · <b>FLAC</b>
+          <b>OPUS</b> (original) / <b>MP3</b> / <b>M4A</b> / <b>FLAC</b>
         </p>
-        <span className="badge">⚡ Mejor calidad = OPUS original, sin recodificar</span>
       </header>
 
       <div className="mode-tabs" role="tablist" aria-label="Modo de descarga">
@@ -106,7 +96,7 @@ function Home() {
           className={mode === "simple" ? "active" : ""}
           onClick={() => setMode("simple")}
         >
-          🎯 Simple · una canción
+          Modo Simple
         </button>
         <button
           role="tab"
@@ -114,7 +104,7 @@ function Home() {
           className={mode === "queue" ? "active" : ""}
           onClick={() => setMode("queue")}
         >
-          📋 Cola · varias a la vez
+          Modo multiple
         </button>
       </div>
 

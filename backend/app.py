@@ -519,10 +519,11 @@ def api_download(req: DownloadRequest):
         headers = {
             "X-MusicGo-Fallback": "1" if fallback.get("active") else "0",
             "X-MusicGo-Source": "soundcloud" if fallback.get("active") else "youtube",
-            "X-MusicGo-Title": str(use_title),
-            "X-MusicGo-Artist": str(use_artist),
-            "X-MusicGo-Located": str(fallback.get("located") or ""),
-            "X-MusicGo-FoundTitle": str(fallback.get("found_title") or ""),
+            # Cabeceras HTTP = latin-1: percent-encode cualquier texto con acentos/emojis
+            "X-MusicGo-Title": urllib.parse.quote(str(use_title), safe=""),
+            "X-MusicGo-Artist": urllib.parse.quote(str(use_artist), safe=""),
+            "X-MusicGo-Located": urllib.parse.quote(str(fallback.get("located") or ""), safe=""),
+            "X-MusicGo-FoundTitle": urllib.parse.quote(str(fallback.get("found_title") or ""), safe=""),
             "X-MusicGo-SizeBytes": str(final.stat().st_size),
         }
         set_progress("Listo", 100)
