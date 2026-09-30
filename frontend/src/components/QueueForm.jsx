@@ -53,6 +53,7 @@ function loadStored() {
         title: it.title || "",
         artist: it.artist || "",
         filename: it.filename || "",
+        fileNameTouched: !!it.fileNameTouched,
       }));
   } catch {
     return [];
@@ -156,6 +157,7 @@ export default function QueueForm() {
                   title: data.title || "",
                   artist: data.artist || "",
                   filename: data.artist ? `${data.artist} - ${data.title}` : data.title || "",
+                  fileNameTouched: false,
                   format: data.sizes?.opus?.bytes ? "opus" : "mp3",
                 }
               : it
@@ -179,7 +181,19 @@ export default function QueueForm() {
 
   /* ---------- Utilidades de la lista ---------- */
   function patchItem(id, patch) {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    setItems((prev) =>
+      prev.map((it) => {
+        if (it.id !== id) return it;
+        const next = { ...it, ...patch };
+        // Auto-sync filename si el usuario NO lo editó a mano
+        if (!next.fileNameTouched && (patch.title !== undefined || patch.artist !== undefined)) {
+          const t = next.title || "";
+          const a = next.artist || "";
+          next.filename = a ? `${a} - ${t}` : t;
+        }
+        return next;
+      })
+    );
   }
 
   function removeItem(id) {
@@ -465,7 +479,7 @@ export default function QueueForm() {
                       <input
                         className="queue-input"
                         value={it.filename}
-                        onChange={(e) => patchItem(it.id, { filename: e.target.value })}
+                        onChange={(e) => patchItem(it.id, { filename: e.target.value, fileNameTouched: true })}
                         disabled={running}
                         placeholder="Nombre del archivo"
                         aria-label="Nombre del archivo"

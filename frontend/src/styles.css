@@ -144,7 +144,7 @@ body {
   transition: background 0.45s ease, border-color 0.45s ease, box-shadow 0.45s ease;
 }
 
-/* ---- Barra superior (ancho completo, pegada al borde superior) ---- */
+/* ---- Barra superior (ancho completo, pegada al borde superior, SIN esquinas redondeadas) ---- */
 .nav {
   display: flex;
   align-items: center;
@@ -154,7 +154,7 @@ body {
   width: 100%;
   padding: 14px 22px;
   margin-top: 0;
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: 0;
 }
 .brand {
   font-weight: 800;
@@ -394,12 +394,18 @@ body {
 .page ul { padding-left: 22px; }
 .page .updated { color: var(--muted); font-size: 0.85rem; font-style: italic; }
 
-/* ---- Footer ---- */
+/* ---- Footer (ancho completo, sin márgenes ni bordes redondeados) ---- */
 .footer {
+  width: 100%;
   text-align: center;
   padding: 18px 20px 26px;
   color: var(--muted);
   font-size: 0.85rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-top: 1px solid var(--glass-border);
+  border-radius: 0;
 }
 .footer a { color: var(--accent-strong); text-decoration: none; font-weight: 600; }
 
