@@ -28,6 +28,33 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers de parsing de título/artista
+# ──────────────────────────────────────────────────────────────────────────────
+# Preferir separadores con espacios: " - ", " – ", " — ", " | ", " : "
+_SPLIT_RE = re.compile(
+    r"^\s*(.+?)\s+(?:-|–|—|\|)\s+(.+?)\s*$"
+    r"|^\s*(.+?)\s*:\s*(.+?)\s*$"  # "Artista: Título" (dos puntos sin espacios obligatorios)
+)
+
+def _split_artist_title(raw_title: str, fallback_artist: str = "") -> tuple[str, str]:
+    """
+    Intenta separar 'Artista - Título' del título bruto de YouTube.
+    Devuelve (artist, title). Si no puede separar, usa fallback_artist y raw_title.
+    """
+    if not raw_title:
+        return fallback_artist, "Audio"
+    m = _SPLIT_RE.match(raw_title)
+    if m:
+        # Grupos 1,2 = separador con espacios; 3,4 = dos puntos
+        artist = (m.group(1) or m.group(3) or "").strip()
+        title = (m.group(2) or m.group(4) or "").strip()
+        if len(artist) > 60 or artist.lower() in {"official video", "official audio", "lyrics", "audio", "video"}:
+            return fallback_artist, raw_title
+        return artist, title
+    return fallback_artist, raw_title
+
+
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 COOKIES_FILE = BASE_DIR / "cookies.txt"
@@ -261,9 +288,13 @@ def run_ffmpeg(src: Path, dst: Path, target: str,
     if has_art:
         args += ["-map", "1:v", "-c:v", "copy", "-disposition:v", "attached_pic"]
 
+    need_recode = bool(title or artist or has_art)
+
     if target == "opus":
-        if src.suffix.lower() in (".opus", ".webm", ".mkv"):
-            args += ["-c:a", "copy"]          # remux sin recodificar = calidad intacta
+        # Opus en WebM/Matroska: remux puro NO escribe Vorbis Comments.
+        # Si hay metadatos o carátula -> recodificar a Opus 160k (calidad YouTube Music).
+        if src.suffix.lower() in (".opus", ".webm", ".mkv") and not need_recode:
+            args += ["-c:a", "copy"]
         else:
             args += ["-c:a", "libopus", "-b:a", "160k"]
     elif target == "m4a":
@@ -297,17 +328,14 @@ def convert(src: Path, target: str, uid: str,
         or (target == "m4a" and src.suffix.lower() == ".m4a")
         or (target == "opus" and src.suffix.lower() in (".opus", ".webm"))
     )
-    if already:
-        try:
-            # Intenta escribir metadatos/portada sin recodificar (remux)
-            run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
-            return dst
-        except subprocess.CalledProcessError:
-            if same_file:
-                return src
-            shutil.copyfile(src, dst)
-            return dst
+    if already and not (title or artist or artwork):
+        # Solo copiar si NO hay nada que escribir (metadatos ni portada)
+        if same_file:
+            return src
+        shutil.copyfile(src, dst)
+        return dst
 
+    # En cualquier otro caso (formato distinto O hay metadatos/portada): ffmpeg
     try:
         run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
         return dst
@@ -349,6 +377,12 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
                 "webpage_url": url,
                 "thumbnail": info.get("thumbnail"),
             }
+            # Separar artista/título si YouTube los vino juntos en el título
+            raw_title = meta["title"]
+            fallback_artist = meta["artist"]
+            artist, title = _split_artist_title(raw_title, fallback_artist)
+            meta["artist"] = artist
+            meta["title"] = title
             return src, meta, fallback
         except Exception as e:
             if not is_age_gate_error(e):
@@ -387,13 +421,18 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
                 raise RuntimeError("Fallo la descarga desde SoundCloud")
             src = cands[0]
 
+    # Separar artista/título también en el resultado de SoundCloud
+    sc_title = found.get("title") or title
+    sc_artist = found.get("uploader") or artist
+    sc_artist, sc_title = _split_artist_title(sc_title, sc_artist)
+
     fallback = {
         "active": True,
         "located": found.get("url") or "",
-        "found_title": found.get("title") or title,
-        "found_uploader": found.get("uploader") or artist,
+        "found_title": sc_title,
+        "found_uploader": sc_artist,
     }
-    return src, {"title": title, "artist": artist, "webpage_url": found.get("url"),
+    return src, {"title": sc_title, "artist": sc_artist, "webpage_url": found.get("url"),
                  "thumbnail": oem.get("thumbnail_url")}, fallback
 
 
