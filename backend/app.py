@@ -163,6 +163,13 @@ def base_yt_opts(outtmpl: str, progress_stage: str = "Descargando…", progress_
         "no_warnings": True,
         "noplaylist": True,
         "nocheckcertificate": True,
+        # Reintentos nativos de yt-dlp: HTTP, fragmentos HLS y extractores.
+        # (El manifest HLS y otros casos los cubre _with_network_retries.)
+        "retries": 10,
+        "fragment_retries": 10,
+        "extractor_retries": 3,
+        "file_access_retries": 3,
+        "socket_timeout": 20,
         "progress_hooks": [_progress_hook_factory(progress_stage, progress_base, progress_span)],
     }
     opts.update(YT_CLIENT_OPTS)
@@ -181,10 +188,19 @@ def yt_info_fast(url: str) -> dict | None:
     }
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)
-    try:
+
+    def _run():
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False)
-    except Exception:
+
+    try:
+        return _with_network_retries(_run, "YouTube")
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(
+                502,
+                "Sin conexión con YouTube (error de red). Reintenta en unos segundos.",
+            ) from e
         return None
 
 
@@ -206,6 +222,46 @@ def is_age_gate_error(e: Exception) -> bool:
         "private video",
     )
     return any(k in msg for k in keys)
+
+
+# Errores de red/transitorios (DNS, timeout, conexión) que vale la pena reintentar.
+# Nota: yt-dlp NO reintenta el fetch del manifest HLS (SoundCloud) ni todos los
+# errores de extracción, así que los reintentos se hacen aquí.
+_NETWORK_MARKERS = (
+    "getaddrinfo", "gaierror", "name resolution", "temporary failure in name resolution",
+    "timed out", "timeout", "transporterror", "urlopen error",
+    "connection refused", "connection reset", "connection aborted", "connection error",
+    "cannot connect", "network is unreachable", "no route to host", "max retries exceeded",
+    "eof occurred", "http error 429", "http error 5",  # 429 y 5xx = transitorios
+)
+
+
+def _is_network_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(k in msg for k in _NETWORK_MARKERS)
+
+
+def _with_network_retries(fn, label: str, percent: int | None = None, attempts: int = 3):
+    """Ejecuta fn() reintentando ante errores de red (esperas 2s → 5s → 10s).
+
+    Los errores que no son de red (o tras agotar intentos) se relanzan tal cual.
+    """
+    waits = (2, 5, 10)
+    for i in range(attempts):
+        try:
+            return fn()
+        except HTTPException:
+            raise
+        except Exception as e:
+            if not _is_network_error(e) or i >= attempts - 1:
+                raise
+            wait = waits[min(i, len(waits) - 1)]
+            if percent is not None:
+                set_progress(
+                    f"⚠️ Fallo de red ({label}). Reintentando {i + 1}/{attempts - 1} en {wait}s…",
+                    percent,
+                )
+            time.sleep(wait)
 
 
 def build_sc_query(artist: str, title: str) -> str:
@@ -230,10 +286,18 @@ def scsearch_first(query: str) -> dict | None:
         "skip_download": True,
         "extract_flat": "in_playlist",
     }
-    try:
+    def _run():
         with yt_dlp.YoutubeDL(opts) as ydl:
-            pl = ydl.extract_info(f"scsearch10:{query}", download=False)
-    except Exception:
+            return ydl.extract_info(f"scsearch10:{query}", download=False)
+
+    try:
+        pl = _with_network_retries(_run, "SoundCloud")
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(
+                502,
+                "Sin conexión con SoundCloud (error de red). Reintenta en unos segundos.",
+            ) from e
         return None
     entries = pl.get("entries") if isinstance(pl, dict) else []
     candidates = []
@@ -362,7 +426,8 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
 
     if not force_fallback:
         set_progress("Descargando desde YouTube…", 10)
-        try:
+
+        def _yt_download():
             with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"))) as ydl:
                 info = ydl.extract_info(url, download=True)
                 src = Path(ydl.prepare_filename(info))
@@ -371,6 +436,10 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
                     if not cands:
                         raise RuntimeError("No se encontró el archivo descargado")
                     src = cands[0]
+                return src, info
+
+        try:
+            src, info = _with_network_retries(_yt_download, "YouTube", percent=10)
             meta = {
                 "title": info.get("title") or "Audio",
                 "artist": info.get("artist") or info.get("uploader") or info.get("channel") or "",
@@ -384,7 +453,15 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
             meta["artist"] = artist
             meta["title"] = title
             return src, meta, fallback
+        except HTTPException:
+            raise
         except Exception as e:
+            if _is_network_error(e):
+                raise HTTPException(
+                    502,
+                    "Sin conexión con YouTube (error de red tras varios intentos). "
+                    "Reintenta en unos segundos.",
+                ) from e
             if not is_age_gate_error(e):
                 raise
             set_progress("⚠️ YouTube marcó el video como restringido (+18). Rescatando…", 30)
@@ -393,8 +470,15 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
 
     # ---- FLUJO DE RESCATE ------------------------------------------------
     try:
-        oem = youtube_oembed(url)
-    except Exception:
+        oem = _with_network_retries(lambda: youtube_oembed(url), "YouTube")
+    except HTTPException:
+        raise
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(
+                502,
+                "Sin conexión con YouTube (error de red). Reintenta en unos segundos.",
+            ) from e
         raise HTTPException(
             403,
             "YouTube bloquea este video y no fue posible rescatar metadatos. "
@@ -411,15 +495,31 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
         raise HTTPException(404, f"No se encontró «{title}» de {artist} en SoundCloud para el rescate.")
 
     set_progress(f"Descargando «{found.get('title', title)}» desde SoundCloud…", 55)
-    with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"),
-                                        "Descargando desde SoundCloud…", 55, 20)) as ydl:
-        info = ydl.extract_info(found["url"], download=True)
-        src = Path(ydl.prepare_filename(info))
-        if not src.exists():
-            cands = sorted(DOWNLOADS_DIR.glob(f"{task_id}*.*"))
-            if not cands:
-                raise RuntimeError("Fallo la descarga desde SoundCloud")
-            src = cands[0]
+
+    def _sc_download():
+        with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"),
+                                            "Descargando desde SoundCloud…", 55, 20)) as ydl:
+            info = ydl.extract_info(found["url"], download=True)
+            src = Path(ydl.prepare_filename(info))
+            if not src.exists():
+                cands = sorted(DOWNLOADS_DIR.glob(f"{task_id}*.*"))
+                if not cands:
+                    raise RuntimeError("Fallo la descarga desde SoundCloud")
+                src = cands[0]
+            return src
+
+    try:
+        src = _with_network_retries(_sc_download, "SoundCloud", percent=55)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(
+                502,
+                "Sin conexión con SoundCloud (error de red tras varios intentos). "
+                "Reintenta en unos segundos.",
+            ) from e
+        raise
 
     # Separar artista/título también en el resultado de SoundCloud
     sc_title = found.get("title") or title
@@ -479,7 +579,14 @@ def api_info(req: InfoRequest):
             fallback_flag = True
             source = "soundcloud-probe"
             thumbnail = oem.get("thumbnail_url")
-        except Exception:
+        except HTTPException:
+            raise
+        except Exception as e:
+            if _is_network_error(e):
+                raise HTTPException(
+                    502,
+                    "Sin conexión con YouTube (error de red). Reintenta en unos segundos.",
+                ) from e
             raise HTTPException(
                 422,
                 "No se pudo leer el enlace. Verifica que sea un video de YouTube válido.",
@@ -582,6 +689,16 @@ def api_download(req: DownloadRequest):
             headers=headers,
             background=BackgroundTask(_cleanup),
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Fallo de red no cubierto por los reintentos internos → mensaje claro (502)
+        if _is_network_error(e):
+            raise HTTPException(
+                502,
+                "Error de red durante la descarga. Reintenta en unos segundos.",
+            ) from e
+        raise
     finally:
         # Si algo falló a mitad de camino, dejar el directorio limpio
         if final is None:
