@@ -4,7 +4,7 @@ import { getInfo, downloadTrack, getProgress, formatBytes } from "../api.js";
 const FORMAT_META = {
   opus: { icon: "bi-music-note-beamed", desc: "Original" },
   mp3: { icon: "bi-volume-up-fill", desc: "320 kbps" },
-  m4a: { icon: "bi-headphones", desc: "AAC 320 kbps" },
+  m4a: { icon: "bi-headphones", desc: "AAC original" },
   flac: { icon: "bi-gem", desc: "Sin pérdida" },
 };
 

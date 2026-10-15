@@ -17,10 +17,10 @@ cd frontend && npm run dev
 ## Project Overview
 
 **MusicGo** — Local-first YouTube→audio downloader. Paste a YouTube link, pick format, download.
-- **Formats**: OPUS (original, default) · MP3 320k CBR · M4A AAC 320k · FLAC
+- **Formats**: OPUS (original, default, sin recodificar) · MP3 320k CBR · M4A (AAC original) · FLAC
 - **Modes**: Simple (1 song) ↔ Queue (multi-URL, persistent, editable per-item)
 - **Metadata**: Title/Artist editable, embedded in file (ID3/Vorbis/iTunes tags) + cover art
-- **+18 rescue**: Auto-detects age-gate, fetches title/artist via YouTube oEmbed, downloads from SoundCloud
+- **Rescue flow**: Auto-detects age-gate **o bloqueo Music Premium/members-only**, obtiene título/artista vía YouTube oEmbed y descarga desde SoundCloud
 - **UI**: Glassmorphism, dark/light theme (persisted), Bootstrap Icons, responsive
 - **Responsible use**: Own/licensed content only; respect platform ToS and local laws
 
@@ -72,20 +72,22 @@ MusicGo/
   - `POST /api/info` — analyze URL → `{title, artist, duration, sizes, thumbnail, fallback}`
   - `POST /api/download` — streams audio file with metadata headers
   - `GET /api/progress` — polling for real-time progress (yt-dlp hook)
-- **Formats**: `opus` (original, default), `mp3` (320k CBR), `m4a` (AAC 320k), `flac` (-8)
-- **No re-encode when source matches target** (e.g. Opus→Opus = copy)
+- **Formats**: `opus` (original, default), `mp3` (320k CBR), `m4a` (AAC original; 320k si convierte), `flac` (-8)
+- **No re-encode when source codec matches target**: se decide con `audio_codec()` (ffprobe), no por extensión
 - **Metadata**:
   - YouTube returns `"Artist - Title"` in `title` field; `artist` often empty
   - `_split_artist_title()` regex parses separators ` - | – — :`, filters "Official Video"/"Lyrics"
   - User edits in UI override parsed values; sent via `req.title` / `req.artist`
   - Written via ffmpeg `-metadata title=... -metadata artist=...`
-- **Opus tags**: Requires **re-encode** (`libopus 160k`) to write Vorbis Comments; remux (`-c:a copy`) drops tags
-- **+18 rescue flow**:
-  1. yt-dlp raises age-gate error
+- **Opus tags**: `-c:a copy` + contenedor **Ogg** (`-f ogg`) **sí** escribe Vorbis Comments y deja el audio **bit a bit idéntico**. Solo se recodifica (`libopus 160k`) cuando la fuente NO es Opus (p. ej. rescate AAC de SoundCloud). *Remux a WebM/.mka sí perdería los tags.*
+- **Cover art**: Ogg Opus **NO** admite carátula adjunta (se omite en OPUS); MP3/M4A/FLAC sí (la imagen se regraba siempre a JPEG para evitar webp/formatos no soportados)
+- **Rescue flow** (`is_rescuable_block_error` = age-gate **o** Music Premium/members-only):
+  1. yt-dlp raises age-gate / Premium / members-only / login error
   2. YouTube oEmbed → title + author_name
   3. SoundCloud `scsearch10:"artist title"` → first result ≥60s
   4. Download via yt-dlp; sets `fallback` flag in headers
-- **Cookies**: Optional `backend/cookies.txt` (Netscape format) for private videos
+  - Aviso: el rescate trae una **copia subida por un tercero** (no es el audio original de YouTube); si la fuente rescatada es AAC, OPUS exigirá recodificar (M4A no)
+- **Cookies**: Optional `backend/cookies.txt` (Netscape format) para vídeos privados/**Premium** (única vía al original de YouTube)
 - **Headers**: `X-MusicGo-*` percent-encoded (latin-1 safe); frontend decodes with `decodeURIComponent`
 
 ### Frontend
@@ -117,9 +119,9 @@ MusicGo/
 
 | Formato | Método interno | Cuándo usarlo |
 |---|---|---|
-| **OPUS** | yt-dlp `-f bestaudio` (copy) | ⭐ Archivar / mejor sonido |
+| **OPUS** | ffmpeg `-c:a copy -f ogg` + tags (sin recodificar) | ⭐ Archivar / mejor sonido |
 | **MP3** | ffmpeg `libmp3lame -b:a 320k` | Coches, reproductores viejos |
-| **M4A** | ffmpeg `aac -b:a 320k` | Equilibrio compatibilidad/calidad |
+| **M4A** | ffmpeg `-c:a copy` si la fuente es AAC; si no `aac -b:a 320k` | Equilibrio compatibilidad/calidad |
 | **FLAC** | ffmpeg `flac -compression_level 8` | Solo con fuente lossless real |
 
 ---
@@ -127,7 +129,7 @@ MusicGo/
 ## Common Gotchas
 1. **Windows paths with spaces**: `dev.bat` uses `start /D` to avoid nested quotes; manual `cd` + `uvicorn` works too
 2. **PowerShell curl**: JSON bodies **must** use `--data-binary "@file"` (inline JSON → 422)
-3. **Opus metadata**: Must re-encode (`libopus 160k`) to get tags; original stream has none
+3. **Opus metadata**: `-c:a copy` **sí** escribe tags si el destino es Ogg (`-f ogg`); recodifica solo si la fuente no es Opus. Ogg no admite carátula adjunta
 4. **Title/Artist split**: YouTube returns `"Artist - Title"` in `title` field; `_split_artist_title()` handles separators ` - | – — :` and filters "Official Video"/"Lyrics"
 5. **Queue persistence**: Survives reload; `fileNameTouched` flag prevents auto-sync after manual filename edit
 

@@ -70,7 +70,7 @@ FORMAT_EXT = {"opus": ".opus", "mp3": ".mp3", "m4a": ".m4a", "flac": ".flac"}
 FORMAT_LABEL = {
     "opus": "OPUS (original, sin recodificar)",
     "mp3": "MP3 320 kbps (CBR, máximo del MP3)",
-    "m4a": "M4A (AAC 320 kbps)",
+    "m4a": "M4A (AAC original; 320 kbps si se convierte)",
     "flac": "FLAC (sin pérdida)",
 }
 
@@ -362,29 +362,55 @@ def download_artwork(url: str | None, uid: str) -> Path | None:
         return None
 
 
+def audio_codec(src: Path) -> str | None:
+    """Codec real de la primera pista de audio (p. ej. 'opus', 'aac', 'mp3').
+
+    Se usa para decidir si basta con copiar el stream (-c:a copy) sin recodificar.
+    """
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_name",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(src)],
+            capture_output=True, text=True, check=True,
+        )
+        return (r.stdout or "").strip().lower() or None
+    except Exception:
+        return None
+
+
+# Contenedores que admiten carátula adjunta (attached_pic) vía ffmpeg.
+# Ogg Opus NO la admite (por eso "opus" queda fuera).
+ART_SUPPORTED = ("mp3", "m4a", "flac")
+
+
 def run_ffmpeg(src: Path, dst: Path, target: str,
                title: str | None = None, artist: str | None = None,
                artwork: Path | None = None) -> None:
+    codec = audio_codec(src)
     args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src)]
-    has_art = artwork is not None and artwork.exists()
+    # La carátula solo se adjunta en contenedores que la soportan.
+    has_art = artwork is not None and artwork.exists() and target in ART_SUPPORTED
     if has_art:
         args += ["-i", str(artwork)]
     # Solo la pista de audio del origen (+ la carátula como pista adjunta)
     args += ["-map", "0:a"]
     if has_art:
-        args += ["-map", "1:v", "-c:v", "copy", "-disposition:v", "attached_pic"]
+        # Regrabar SIEMPRE la portada a JPEG: MP4/ID3/FLAC no admiten webp, etc.
+        # (Es solo la imagen; el audio no se toca.)
+        args += ["-map", "1:v", "-c:v", "mjpeg", "-disposition:v", "attached_pic"]
 
-    need_recode = bool(title or artist or has_art)
-
+    # --- Elección de códec: copiar siempre que la fuente YA sea el códec destino ---
     if target == "opus":
-        # Opus en WebM/Matroska: remux puro NO escribe Vorbis Comments.
-        # Si hay metadatos o carátula -> recodificar a Opus 160k (calidad YouTube Music).
-        if src.suffix.lower() in (".opus", ".webm", ".mkv") and not need_recode:
-            args += ["-c:a", "copy"]
+        # Ogg Opus: -c:a copy SÍ escribe Vorbis Comments y deja el audio bit a bit
+        # idéntico a la fuente. (Remux a WebM/.mka perdería los tags; a Ogg no.)
+        if codec == "opus":
+            args += ["-c:a", "copy", "-f", "ogg"]
         else:
-            args += ["-c:a", "libopus", "-b:a", "160k"]
+            args += ["-c:a", "libopus", "-b:a", "160k", "-f", "ogg"]
     elif target == "m4a":
-        if src.suffix.lower() == ".m4a":
+        # AAC en MP4/M4A: -c:a copy conserva el stream y sí escribe tags+portada.
+        if codec == "aac":
             args += ["-c:a", "copy"]
         else:
             args += ["-c:a", "aac", "-b:a", "320k"]
@@ -407,21 +433,22 @@ def convert(src: Path, target: str, uid: str,
     dst = DOWNLOADS_DIR / f"{uid}{FORMAT_EXT[target]}"
     same_file = src.resolve() == dst.resolve()
 
-    # Si la fuente YA es el formato pedido, copiar (nunca recodificar: mejor calidad)
+    # Copia directa (byte a byte) SOLO si el contenedor de origen ya coincide con el
+    # destino y no hay nada que escribir. Nunca recodifica. (Los .webm NO entran aquí:
+    # un Opus de YouTube es WebM y debe remuxarse a contenedor Ogg.)
     already = (
         (target == "mp3" and src.suffix.lower() == ".mp3")
         or (target == "flac" and src.suffix.lower() == ".flac")
         or (target == "m4a" and src.suffix.lower() == ".m4a")
-        or (target == "opus" and src.suffix.lower() in (".opus", ".webm"))
+        or (target == "opus" and src.suffix.lower() == ".opus")
     )
     if already and not (title or artist or artwork):
-        # Solo copiar si NO hay nada que escribir (metadatos ni portada)
         if same_file:
             return src
         shutil.copyfile(src, dst)
         return dst
 
-    # En cualquier otro caso (formato distinto O hay metadatos/portada): ffmpeg
+    # En cualquier otro caso: ffmpeg (con -c:a copy si el códec ya coincide).
     try:
         run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
         return dst
