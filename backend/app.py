@@ -201,6 +201,8 @@ def yt_info_fast(url: str) -> dict | None:
                 502,
                 "Sin conexión con YouTube (error de red). Reintenta en unos segundos.",
             ) from e
+        if is_rescuable_block_error(e):
+            return None
         return None
 
 
@@ -222,6 +224,26 @@ def is_age_gate_error(e: Exception) -> bool:
         "private video",
     )
     return any(k in msg for k in keys)
+
+
+def is_premium_block_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    keys = (
+        "music premium",
+        "premium members",
+        "only available to music premium",
+        "join youtube premium",
+        "youtube premium",
+        "members-only",
+        "subscriber-only",
+        "membership",
+    )
+    return any(k in msg for k in keys)
+
+
+def is_rescuable_block_error(e: Exception) -> bool:
+    """Errores que permiten intentar rescate (oEmbed + SoundCloud)."""
+    return is_age_gate_error(e) or is_premium_block_error(e)
 
 
 # Errores de red/transitorios (DNS, timeout, conexión) que vale la pena reintentar.
@@ -462,9 +484,9 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
                     "Sin conexión con YouTube (error de red tras varios intentos). "
                     "Reintenta en unos segundos.",
                 ) from e
-            if not is_age_gate_error(e):
+            if not is_rescuable_block_error(e):
                 raise
-            set_progress("⚠️ YouTube marcó el video como restringido (+18). Rescatando…", 30)
+            set_progress("⚠️ Vídeo bloqueado en YouTube (+18/Premium). Rescatando…", 30)
     else:
         set_progress("Simulando restricción (+18) para pruebas…", 25)
 
