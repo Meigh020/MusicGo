@@ -10,7 +10,9 @@ Servidor FastAPI que:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import mimetypes
 import re
 import shutil
 import subprocess
@@ -57,8 +59,12 @@ def _split_artist_title(raw_title: str, fallback_artist: str = "") -> tuple[str,
 
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOADS_DIR = BASE_DIR / "downloads"
+PREVIEW_DIR = DOWNLOADS_DIR / "preview"
 COOKIES_FILE = BASE_DIR / "cookies.txt"
 DOWNLOADS_DIR.mkdir(exist_ok=True)
+PREVIEW_DIR.mkdir(exist_ok=True)
+
+APP_VERSION = "2.0.0"
 
 # Clientes de YouTube que evitan muchos bloqueos (incluida parte de la restricción +18)
 YT_CLIENT_OPTS = {
@@ -84,19 +90,68 @@ BPS_ESTIMATE = {
     "flac": 192_000 * 1.1,
 }
 
-# Progreso global (app local de un solo usuario)
+# Progreso global (compatibilidad con /api/progress) + registro por tarea.
 progress = {"task_id": None, "percent": 0, "stage": "inactivo"}
+TASKS: dict[str, dict] = {}
+MAX_TASKS = 40
 
 
-def _progress_hook_factory(stage: str, base_pct: int, span: int):
+class DownloadCancelled(Exception):
+    """La descarga fue cancelada por el usuario."""
+
+
+def task_create(task_id: str, title: str = "", stage: str = "En cola") -> dict:
+    task = {
+        "id": task_id,
+        "title": title,
+        "percent": 0,
+        "stage": stage,
+        "status": "running",
+        "cancel": False,
+        "error": None,
+        "started": time.time(),
+    }
+    TASKS[task_id] = task
+    if len(TASKS) > MAX_TASKS:
+        for key in sorted(TASKS, key=lambda k: TASKS[k].get("started", 0))[: len(TASKS) - MAX_TASKS]:
+            TASKS.pop(key, None)
+    return task
+
+
+def task_update(task_id: str | None, **fields) -> None:
+    if not task_id:
+        return
+    task = TASKS.get(task_id)
+    if not task:
+        return
+    task.update(fields)
+    if "percent" in fields or "stage" in fields:
+        progress.update(task_id=task_id, percent=task["percent"], stage=task["stage"])
+
+
+def task_cancelled(task_id: str | None) -> bool:
+    return bool(task_id and TASKS.get(task_id, {}).get("cancel"))
+
+
+def task_check(task_id: str | None) -> None:
+    if task_cancelled(task_id):
+        raise DownloadCancelled()
+
+
+def _progress_hook_factory(stage: str, base_pct: int, span: int, task_id: str | None = None):
     """Crea un hook de yt-dlp que actualiza el progreso real de la descarga."""
     def hook(d):
+        task_check(task_id)
         if d.get("status") == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
             if total:
                 pct = base_pct + (d.get("downloaded_bytes", 0) / total) * span
-                progress.update(stage=stage, percent=int(pct))
+                if task_id:
+                    task_update(task_id, stage=stage, percent=int(pct), status="downloading")
+                else:
+                    progress.update(stage=stage, percent=int(pct))
     return hook
+
 
 
 # ---------------------------------------------------------------------------
@@ -136,13 +191,26 @@ def cleanup_old(days: float = 1.0) -> None:
             pass
 
 
+def cleanup_previews(max_age: float = 12 * 3600) -> None:
+    """La vista previa es una caché: no debe crecer sin límite."""
+    cutoff = time.time() - max_age
+    for f in PREVIEW_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     cleanup_old()
+    cleanup_previews()
     yield
 
 
-app = FastAPI(title="MusicGo API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="MusicGo API", version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -155,7 +223,8 @@ app.add_middleware(
 # Extracción de información
 # ---------------------------------------------------------------------------
 
-def base_yt_opts(outtmpl: str, progress_stage: str = "Descargando…", progress_base: int = 10, progress_span: int = 25) -> dict:
+def base_yt_opts(outtmpl: str, progress_stage: str = "Descargando…", progress_base: int = 10,
+                 progress_span: int = 25, task_id: str | None = None) -> dict:
     opts = {
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
@@ -170,7 +239,7 @@ def base_yt_opts(outtmpl: str, progress_stage: str = "Descargando…", progress_
         "extractor_retries": 3,
         "file_access_retries": 3,
         "socket_timeout": 20,
-        "progress_hooks": [_progress_hook_factory(progress_stage, progress_base, progress_span)],
+        "progress_hooks": [_progress_hook_factory(progress_stage, progress_base, progress_span, task_id)],
     }
     opts.update(YT_CLIENT_OPTS)
     if COOKIES_FILE.exists():
@@ -386,7 +455,9 @@ ART_SUPPORTED = ("mp3", "m4a", "flac")
 
 def run_ffmpeg(src: Path, dst: Path, target: str,
                title: str | None = None, artist: str | None = None,
-               artwork: Path | None = None) -> None:
+               artwork: Path | None = None, album: str | None = None,
+               genre: str | None = None, year: str | None = None,
+               track: str | None = None, task_id: str | None = None) -> None:
     codec = audio_codec(src)
     args = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src)]
     # La carátula solo se adjunta en contenedores que la soportan.
@@ -419,17 +490,39 @@ def run_ffmpeg(src: Path, dst: Path, target: str,
     elif target == "flac":
         args += ["-c:a", "flac", "-compression_level", "8"]
 
-    if title:
-        args += ["-metadata", f"title={title}"]
-    if artist:
-        args += ["-metadata", f"artist={artist}"]
+    tags = {
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "genre": genre,
+        "date": year,
+        "track": track,
+    }
+    for key, value in tags.items():
+        if value not in (None, ""):
+            args += ["-metadata", f"{key}={value}"]
     args.append(str(dst))
-    subprocess.run(args, check=True, capture_output=True)
+
+    # Popen (no run) para poder cancelar una conversión en curso.
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    while proc.poll() is None:
+        if task_cancelled(task_id):
+            proc.kill()
+            proc.wait()
+            raise DownloadCancelled()
+        time.sleep(0.15)
+    err = proc.stderr.read() if proc.stderr else b""
+    if proc.stderr:
+        proc.stderr.close()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, args, output=b"", stderr=err)
 
 
 def convert(src: Path, target: str, uid: str,
             title: str | None = None, artist: str | None = None,
-            artwork: Path | None = None) -> Path:
+            artwork: Path | None = None, album: str | None = None,
+            genre: str | None = None, year: str | None = None,
+            track: str | None = None, task_id: str | None = None) -> Path:
     dst = DOWNLOADS_DIR / f"{uid}{FORMAT_EXT[target]}"
     same_file = src.resolve() == dst.resolve()
 
@@ -442,7 +535,8 @@ def convert(src: Path, target: str, uid: str,
         or (target == "m4a" and src.suffix.lower() == ".m4a")
         or (target == "opus" and src.suffix.lower() == ".opus")
     )
-    if already and not (title or artist or artwork):
+    has_tags = bool(title or artist or album or genre or year or track)
+    if already and not (has_tags or artwork):
         if same_file:
             return src
         shutil.copyfile(src, dst)
@@ -450,13 +544,19 @@ def convert(src: Path, target: str, uid: str,
 
     # En cualquier otro caso: ffmpeg (con -c:a copy si el códec ya coincide).
     try:
-        run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork)
+        run_ffmpeg(src, dst, target, title=title, artist=artist, artwork=artwork,
+                   album=album, genre=genre, year=year, track=track, task_id=task_id)
         return dst
+    except DownloadCancelled:
+        raise
     except subprocess.CalledProcessError:
         try:
             # Reintento sin portada (algunos muxers no la soportan)
-            run_ffmpeg(src, dst, target, title=title, artist=artist)
+            run_ffmpeg(src, dst, target, title=title, artist=artist,
+                       album=album, genre=genre, year=year, track=track, task_id=task_id)
             return dst
+        except DownloadCancelled:
+            raise
         except subprocess.CalledProcessError:
             # Recurso final: copia directa del archivo tal cual
             if same_file:
@@ -474,10 +574,12 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
     fallback = {"active": False, "located": None}
 
     if not force_fallback:
+        task_update(task_id, stage="Descargando desde YouTube…", percent=10)
         set_progress("Descargando desde YouTube…", 10)
 
         def _yt_download():
-            with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"))) as ydl:
+            with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"),
+                                               task_id=task_id)) as ydl:
                 info = ydl.extract_info(url, download=True)
                 src = Path(ydl.prepare_filename(info))
                 if not src.exists():
@@ -502,9 +604,13 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
             meta["artist"] = artist
             meta["title"] = title
             return src, meta, fallback
+        except DownloadCancelled:
+            raise
         except HTTPException:
             raise
         except Exception as e:
+            if task_cancelled(task_id):
+                raise DownloadCancelled() from e
             if _is_network_error(e):
                 raise HTTPException(
                     502,
@@ -514,6 +620,7 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
             if not is_rescuable_block_error(e):
                 raise
             set_progress("⚠️ Vídeo bloqueado en YouTube (+18/Premium). Rescatando…", 30)
+            task_update(task_id, stage="Rescatando desde SoundCloud…", percent=30)
     else:
         set_progress("Simulando restricción (+18) para pruebas…", 25)
 
@@ -544,10 +651,11 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
         raise HTTPException(404, f"No se encontró «{title}» de {artist} en SoundCloud para el rescate.")
 
     set_progress(f"Descargando «{found.get('title', title)}» desde SoundCloud…", 55)
+    task_update(task_id, stage=f"Descargando desde SoundCloud…", percent=55)
 
     def _sc_download():
         with yt_dlp.YoutubeDL(base_yt_opts(str(DOWNLOADS_DIR / f"{task_id}_src.%(ext)s"),
-                                            "Descargando desde SoundCloud…", 55, 20)) as ydl:
+                                            "Descargando desde SoundCloud…", 55, 20, task_id=task_id)) as ydl:
             info = ydl.extract_info(found["url"], download=True)
             src = Path(ydl.prepare_filename(info))
             if not src.exists():
@@ -559,9 +667,13 @@ def download_source(url: str, task_id: str, force_fallback: bool = False):
 
     try:
         src = _with_network_retries(_sc_download, "SoundCloud", percent=55)
+    except DownloadCancelled:
+        raise
     except HTTPException:
         raise
     except Exception as e:
+        if task_cancelled(task_id):
+            raise DownloadCancelled() from e
         if _is_network_error(e):
             raise HTTPException(
                 502,
@@ -593,23 +705,261 @@ class InfoRequest(BaseModel):
     url: str
 
 
+class SearchRequest(BaseModel):
+    query: str
+    limit: int = 12
+
+
+class PlaylistRequest(BaseModel):
+    url: str
+
+
+class PreviewRequest(BaseModel):
+    url: str
+
+
 class DownloadRequest(BaseModel):
     url: str
     format: str = "opus"
     filename: str | None = None
     title: str | None = None
     artist: str | None = None
+    album: str | None = None
+    genre: str | None = None
+    year: str | None = None
+    track: str | None = None
+    task_id: str | None = None
     force_fallback: bool = False
 
 
 @app.get("/")
 def root():
-    return {"app": "MusicGo API", "version": "0.1.0", "endpoints": ["/api/info", "/api/download", "/api/progress"]}
+    return {
+        "app": "MusicGo API",
+        "version": APP_VERSION,
+        "endpoints": [
+            "/api/info", "/api/download", "/api/progress",
+            "/api/search", "/api/playlist", "/api/preview",
+            "/api/tasks/{task_id}", "/api/tasks/{task_id}/cancel",
+        ],
+    }
 
 
 @app.get("/api/progress")
 def api_progress():
     return progress
+
+
+# ---------------------------------------------------------------------------
+# Tareas (progreso por canción + cancelación)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tasks/{task_id}")
+def api_task(task_id: str):
+    task = TASKS.get(task_id)
+    if not task:
+        raise HTTPException(404, "Tarea no encontrada.")
+    return task
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+def api_task_cancel(task_id: str):
+    task = TASKS.get(task_id)
+    if not task:
+        raise HTTPException(404, "Tarea no encontrada.")
+    task["cancel"] = True
+    task["stage"] = "Cancelando…"
+    return {"ok": True, "task_id": task_id}
+
+
+# ---------------------------------------------------------------------------
+# Búsqueda por nombre y playlists (resultados ligeros, sin descargar)
+# ---------------------------------------------------------------------------
+_SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_SEARCH_TTL = 300
+
+
+def _watch_url(entry: dict) -> str:
+    url = entry.get("url") or entry.get("webpage_url")
+    if url and str(url).startswith("http"):
+        return url
+    video_id = entry.get("id")
+    return f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+
+
+def _thumb_url(entry: dict) -> str | None:
+    thumbs = entry.get("thumbnails") or []
+    if thumbs:
+        return thumbs[-1].get("url")
+    if entry.get("thumbnail"):
+        return entry["thumbnail"]
+    video_id = entry.get("id")
+    return f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg" if video_id else None
+
+
+def _flat_entry(entry: dict) -> dict:
+    raw_title = entry.get("title") or "Audio"
+    uploader = entry.get("uploader") or entry.get("channel") or ""
+    artist, title = _split_artist_title(raw_title, uploader)
+    return {
+        "id": entry.get("id"),
+        "url": _watch_url(entry),
+        "title": title,
+        "artist": artist,
+        "raw_title": raw_title,
+        "duration": entry.get("duration"),
+        "thumbnail": _thumb_url(entry),
+    }
+
+
+@app.post("/api/search")
+def api_search(req: SearchRequest):
+    query = (req.query or "").strip()
+    if len(query) < 2:
+        raise HTTPException(422, "Escribe al menos dos caracteres para buscar.")
+    limit = max(1, min(int(req.limit or 12), 20))
+    cache_key = f"{query.lower()}:{limit}"
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _SEARCH_TTL:
+        return {"query": query, "results": cached[1], "cached": True}
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "noplaylist": True,
+        **YT_CLIENT_OPTS,
+    }
+    if COOKIES_FILE.exists():
+        opts["cookiefile"] = str(COOKIES_FILE)
+
+    def _run():
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+
+    try:
+        data = _with_network_retries(_run, "YouTube")
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(502, "Sin conexión con YouTube. Reintenta en unos segundos.") from e
+        raise HTTPException(502, "No se pudo buscar en YouTube ahora mismo.") from e
+
+    results = [_flat_entry(e) for e in (data.get("entries") or []) if e]
+    _SEARCH_CACHE[cache_key] = (time.time(), results)
+    return {"query": query, "results": results, "cached": False}
+
+
+@app.post("/api/playlist")
+def api_playlist(req: PlaylistRequest):
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(422, "Pega el enlace de una playlist.")
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "noplaylist": False,
+        **YT_CLIENT_OPTS,
+    }
+    if COOKIES_FILE.exists():
+        opts["cookiefile"] = str(COOKIES_FILE)
+
+    def _run():
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False)
+
+    try:
+        data = _with_network_retries(_run, "YouTube")
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(502, "Sin conexión con YouTube. Reintenta en unos segundos.") from e
+        raise HTTPException(422, "No se pudo leer la playlist. Verifica el enlace.") from e
+
+    entries = [e for e in (data.get("entries") or []) if e]
+    cap = 100
+    results = [_flat_entry(e) for e in entries[:cap]]
+    return {
+        "title": data.get("title") or "Playlist",
+        "count": len(entries),
+        "truncated": len(entries) > cap,
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Vista previa (caché temporal; no toca los archivos finales)
+# ---------------------------------------------------------------------------
+_PREVIEW_TYPES = {
+    ".webm": "audio/webm",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".opus": "audio/ogg",
+    ".ogg": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+}
+
+
+def _preview_key(url: str) -> str:
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+
+
+def _preview_path(url: str) -> Path | None:
+    for p in PREVIEW_DIR.glob(f"{_preview_key(url)}.*"):
+        if p.is_file() and p.suffix.lower() not in {".part", ".ytdl"} and p.stat().st_size > 10_000:
+            return p
+    return None
+
+
+def _preview_response(path: Path, cache_state: str) -> FileResponse:
+    media = _PREVIEW_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "audio/ogg"
+    return FileResponse(
+        path,
+        media_type=media,
+        headers={"Cache-Control": "no-store", "X-MusicGo-Preview": cache_state},
+    )
+
+
+@app.post("/api/preview")
+def api_preview(req: PreviewRequest):
+    url = (req.url or "").strip()
+    if not url:
+        raise HTTPException(422, "Falta el enlace para la vista previa.")
+    cleanup_previews()
+
+    cached = _preview_path(url)
+    if cached:
+        return _preview_response(cached, "cache")
+
+    key = _preview_key(url)
+    opts = base_yt_opts(str(PREVIEW_DIR / f"{key}.%(ext)s"), "Preparando vista previa…", 0, 100)
+    # La vista previa no debe ensuciar el progreso de la cola.
+    opts["progress_hooks"] = []
+
+    def _run():
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            path = Path(ydl.prepare_filename(info))
+            if not path.exists():
+                cands = sorted(PREVIEW_DIR.glob(f"{key}.*"))
+                if not cands:
+                    raise RuntimeError("No se pudo preparar la vista previa")
+                path = cands[0]
+            return path
+
+    try:
+        path = _with_network_retries(_run, "YouTube")
+    except Exception as e:
+        if _is_network_error(e):
+            raise HTTPException(502, "Sin conexión con YouTube (vista previa).") from e
+        raise HTTPException(
+            502,
+            "No se pudo preparar la vista previa. Puedes descargar directamente.",
+        ) from e
+    return _preview_response(path, "fresh")
 
 
 @app.post("/api/info")
@@ -622,8 +972,9 @@ def api_info(req: InfoRequest):
     if info is None:
         try:
             oem = youtube_oembed(req.url)
-            title = oem.get("title") or "Audio"
-            artist = oem.get("author_name") or "Desconocido"
+            raw_title = oem.get("title") or "Audio"
+            author = oem.get("author_name") or ""
+            artist, title = _split_artist_title(raw_title, author or "Desconocido")
             duration = None
             fallback_flag = True
             source = "soundcloud-probe"
@@ -641,8 +992,9 @@ def api_info(req: InfoRequest):
                 "No se pudo leer el enlace. Verifica que sea un video de YouTube válido.",
             )
     else:
-        title = info.get("title") or "Audio"
-        artist = info.get("uploader") or info.get("channel") or "Desconocido"
+        raw_title = info.get("title") or "Audio"
+        uploader = info.get("uploader") or info.get("channel") or ""
+        artist, title = _split_artist_title(raw_title, uploader or "Desconocido")
         duration = info.get("duration")
         thumbnail = info.get("thumbnail")
 
@@ -692,7 +1044,12 @@ def api_download(req: DownloadRequest):
     if fmt not in FORMATS:
         raise HTTPException(422, f"Formato no soportado: {fmt}. Usa: {', '.join(FORMATS)}")
 
-    task_id = uuid.uuid4().hex[:12]
+    # El id lo genera el cliente para poder seguir el progreso y cancelar.
+    # Se sanea porque también forma parte de los nombres de archivo temporales.
+    clean_id = re.sub(r"[^A-Za-z0-9_-]", "", req.task_id or "")[:32]
+    task_id = clean_id or uuid.uuid4().hex[:12]
+    TASKS.pop(task_id, None)
+    task_create(task_id, title=req.title or "", stage="Iniciando…")
     progress["task_id"] = task_id
     set_progress("Iniciando…", 5)
 
@@ -700,12 +1057,18 @@ def api_download(req: DownloadRequest):
     fallback = {"active": False, "located": None}
     try:
         src, meta, fallback = download_source(req.url, task_id, force_fallback=req.force_fallback)
+        task_update(task_id, stage="Convirtiendo audio a " + FORMAT_LABEL[fmt] + "…", percent=85)
         set_progress("Convirtiendo audio a " + FORMAT_LABEL[fmt] + "…", 85)
         # Título y artista: si el usuario los editó, se usan; si no, los del video
         use_artist = req.artist if req.artist is not None else (meta.get("artist") or "")
         use_title = req.title if req.title is not None else (meta.get("title") or "audio")
         artwork = download_artwork(meta.get("thumbnail"), task_id)
-        final = convert(src, fmt, task_id, title=use_title, artist=use_artist, artwork=artwork)
+        final = convert(
+            src, fmt, task_id,
+            title=use_title, artist=use_artist, artwork=artwork,
+            album=req.album, genre=req.genre, year=req.year, track=req.track,
+            task_id=task_id,
+        )
 
         default_name = f"{use_artist} - {use_title}" if use_artist else use_title
         base_name = sanitize_filename(req.filename or default_name)
@@ -720,7 +1083,9 @@ def api_download(req: DownloadRequest):
             "X-MusicGo-Located": urllib.parse.quote(str(fallback.get("located") or ""), safe=""),
             "X-MusicGo-FoundTitle": urllib.parse.quote(str(fallback.get("found_title") or ""), safe=""),
             "X-MusicGo-SizeBytes": str(final.stat().st_size),
+            "X-MusicGo-TaskId": task_id,
         }
+        task_update(task_id, status="done", percent=100, stage="Listo")
         set_progress("Listo", 100)
 
         def _cleanup():
@@ -738,15 +1103,21 @@ def api_download(req: DownloadRequest):
             headers=headers,
             background=BackgroundTask(_cleanup),
         )
-    except HTTPException:
+    except DownloadCancelled:
+        task_update(task_id, status="cancelled", stage="Cancelada", error="Cancelada por el usuario")
+        raise HTTPException(499, "Descarga cancelada.")
+    except HTTPException as e:
+        task_update(task_id, status="error", stage="Error", error=str(e.detail))
         raise
     except Exception as e:
         # Fallo de red no cubierto por los reintentos internos → mensaje claro (502)
         if _is_network_error(e):
+            task_update(task_id, status="error", stage="Error de red", error="Error de red durante la descarga.")
             raise HTTPException(
                 502,
                 "Error de red durante la descarga. Reintenta en unos segundos.",
             ) from e
+        task_update(task_id, status="error", stage="Error", error=str(e))
         raise
     finally:
         # Si algo falló a mitad de camino, dejar el directorio limpio

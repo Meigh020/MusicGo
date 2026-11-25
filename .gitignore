@@ -11,6 +11,7 @@ venv/
 
 # Descargas temporales del backend
 backend/downloads/
+backend/previews/
 
 # Sensible (nunca subir cookies reales)
 cookies.txt
