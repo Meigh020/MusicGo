@@ -1,121 +1,96 @@
 import { useEffect, useState } from "react";
-import { Route, Routes, NavLink, Link } from "react-router-dom";
-import DownloadForm from "./components/DownloadForm.jsx";
-import QueueForm from "./components/QueueForm.jsx";
-import CookieBanner from "./components/CookieBanner.jsx";
+import { Route, Routes, useLocation } from "react-router-dom";
+import TopBar from "./components/TopBar.jsx";
+import Footer from "./components/Footer.jsx";
+import DownloadPage from "./pages/DownloadPage.jsx";
+import QueuePage from "./pages/QueuePage.jsx";
+import LibraryPage from "./pages/LibraryPage.jsx";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
+import { ToastProvider } from "./context/ToastContext.jsx";
+import { LibraryProvider } from "./context/LibraryContext.jsx";
+import { PlayerProvider, usePlayer } from "./context/PlayerContext.jsx";
+import { QueueProvider } from "./context/QueueContext.jsx";
 
 const THEME_KEY = "musicgo-theme";
 
-export default function App() {
-  const [theme, setTheme] = useState(() => {
-    try {
-      const stored = localStorage.getItem(THEME_KEY);
-      return stored === "dark" ? "dark" : "light";
-    } catch {
-      return "light";
-    }
-  });
+function getInitialTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "dark" || stored === "light") return stored;
+  } catch {
+    /* sin almacenamiento */
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
-  // Aplica el tema al <html> (data-theme) y lo persiste
+export default function App() {
+  const [theme, setTheme] = useState(getInitialTheme);
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     try {
       localStorage.setItem(THEME_KEY, theme);
     } catch {
-      /* sin almacenamiento: ignorar */
+      /* sin almacenamiento */
     }
   }, [theme]);
 
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  const toggleTheme = () => setTheme((value) => (value === "dark" ? "light" : "dark"));
 
   return (
-    <div className="app">
-      <div className="blobs" aria-hidden="true">
-        <div className="blob blob-1" />
-        <div className="blob blob-2" />
-        <div className="blob blob-3" />
-        <div className="blob blob-4" />
-      </div>
+    <ToastProvider>
+      <LibraryProvider>
+        <PlayerProvider>
+          <QueueProvider>
+            <Shell theme={theme} onToggleTheme={toggleTheme} />
+          </QueueProvider>
+        </PlayerProvider>
+      </LibraryProvider>
+    </ToastProvider>
+  );
+}
 
-      <nav className="nav glass">
-        <Link to="/" className="brand">
-          <em>
-            <i className="bi bi-music-note-beamed" aria-hidden="true"></i>
-          </em>{" "}
-          MusicGo
-        </Link>
-        <div className="nav-links">
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-            title={theme === "dark" ? "Apagar la luz (modo claro)" : "Encender la luz (modo oscuro)"}
-          >
-            {theme === "dark" ? (
-              <i className="bi bi-sun" aria-hidden="true"></i>
-            ) : (
-              <i className="bi bi-moon-stars" aria-hidden="true"></i>
-            )}
-          </button>
-        </div>
-      </nav>
+function Shell({ theme, onToggleTheme }) {
+  const location = useLocation();
+  const { current } = usePlayer();
 
-      <div className="content">
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [location.pathname]);
+
+  return (
+    <div className={`app ${current ? "with-player" : ""}`}>
+      <TopBar theme={theme} onToggleTheme={onToggleTheme} />
+      <main className="content">
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<DownloadPage />} />
+          <Route path="/cola" element={<QueuePage />} />
+          <Route path="/biblioteca" element={<LibraryPage />} />
           <Route path="/privacidad" element={<Privacy />} />
           <Route path="/terminos" element={<Terms />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
-      </div>
-
-      <footer className="footer">
-        <p>
-          Revisa las reglas de {" "}
-          <Link to="/privacidad">Privacidad</Link> y{" "}
-          <Link to="/terminos">Términos</Link>
-        </p>
-      </footer>
-
-      <CookieBanner />
+      </main>
+      <Footer />
     </div>
   );
 }
 
-function Home() {
-  const [mode, setMode] = useState("simple");
+function NotFound() {
   return (
-    <>
-      <header className="hero">
-        <h1>Descarga música en la mejor calidad</h1>
-        <p>
-          Pega un enlace de YouTube, elige formato y descarga:{" "}
-          <b>OPUS</b> (original) / <b>MP3</b> / <b>M4A</b> / <b>FLAC</b>
-        </p>
+    <section className="mod">
+      <header className="mod-head">
+        <span className="mod-tab" aria-hidden="true" />
+        <h2 className="mod-title">Error 404</h2>
+        <span className="mod-id">—</span>
       </header>
-
-      <div className="mode-tabs" role="tablist" aria-label="Modo de descarga">
-        <button
-          role="tab"
-          aria-selected={mode === "simple"}
-          className={mode === "simple" ? "active" : ""}
-          onClick={() => setMode("simple")}
-        >
-          Modo Simple
-        </button>
-        <button
-          role="tab"
-          aria-selected={mode === "queue"}
-          className={mode === "queue" ? "active" : ""}
-          onClick={() => setMode("queue")}
-        >
-          Modo multiple
-        </button>
+      <div className="mod-body">
+        <p className="lead">Esa dirección no existe en MusicGo.</p>
+        <a className="btn btn-ghost" href="/">
+          Volver al inicio
+        </a>
       </div>
-
-      {mode === "simple" ? <DownloadForm /> : <QueueForm />}
-    </>
+    </section>
   );
 }

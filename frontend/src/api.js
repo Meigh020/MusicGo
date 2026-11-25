@@ -1,51 +1,101 @@
-// Cliente HTTP de MusicGo hacia el backend (/api → proxy Vite → FastAPI)
+// Cliente HTTP de MusicGo 2.0 hacia el backend (/api → proxy Vite → FastAPI)
 
-async function postJSON(path, body) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function postJSON(path, body, signal) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    throw new Error("No se pudo conectar con el backend. ¿Está corriendo en el puerto 8000?");
+  }
   if (!res.ok) {
     let detail = `Error ${res.status}`;
     try {
       const data = await res.json();
-      if (data && data.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      if (data && data.detail) {
+        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      }
     } catch {
       /* sin cuerpo JSON */
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = res.status;
+    throw error;
   }
   return res;
 }
 
-/** Analiza un enlace: {title, artist, duration, source, fallback, sizes} */
-export async function getInfo(url) {
-  const res = await postJSON("/api/info", { url });
-  return res.json();
-}
-
-/** Descifra una cabecera percent-encoded (por si trae acentos/emojis/UTF-8) */
 function decodeHeader(value) {
   if (!value) return "";
   try {
     return decodeURIComponent(value);
   } catch {
-    return value; // ya era texto plano
+    return value;
   }
 }
 
-/** Descarga la pista y dispara la descarga en el navegador.
- *  Devuelve metadatos de la respuesta (fallback, tamaño real, nombre, etc.) */
-export async function downloadTrack({ url, format, filename, title, artist, forceFallback = false }) {
-  const res = await postJSON("/api/download", {
-    url,
-    format,
-    filename: filename || null,
-    title: title !== undefined && title !== null ? title : null,
-    artist: artist !== undefined && artist !== null ? artist : null,
-    force_fallback: forceFallback,
-  });
+/** Analiza un enlace: {title, artist, duration, source, fallback, sizes, thumbnail} */
+export async function getInfo(url) {
+  const res = await postJSON("/api/info", { url });
+  return res.json();
+}
+
+/** Búsqueda por nombre en YouTube (resultados ligeros, sin descargar). */
+export async function searchYouTube(query, limit = 10) {
+  const res = await postJSON("/api/search", { query, limit });
+  return res.json();
+}
+
+/** Lee una playlist: {title, count, truncated, results:[...]} */
+export async function getPlaylist(url) {
+  const res = await postJSON("/api/playlist", { url });
+  return res.json();
+}
+
+/** Descarga la vista previa (audio original cacheado en el backend). */
+export async function getPreviewBlob(url) {
+  const res = await postJSON("/api/preview", { url });
+  return {
+    blob: await res.blob(),
+    cached: res.headers.get("X-MusicGo-Preview") === "cache",
+  };
+}
+
+/** Descarga la pista y dispara la descarga en el navegador. */
+export async function downloadTrack({
+  url,
+  format,
+  filename,
+  title,
+  artist,
+  album,
+  genre,
+  year,
+  track,
+  taskId,
+  signal,
+}) {
+  const res = await postJSON(
+    "/api/download",
+    {
+      url,
+      format,
+      filename: filename || null,
+      title: title ?? null,
+      artist: artist ?? null,
+      album: album || null,
+      genre: genre || null,
+      year: year || null,
+      track: track || null,
+      task_id: taskId || null,
+    },
+    signal
+  );
 
   const blob = await res.blob();
   const fallback = res.headers.get("X-MusicGo-Fallback") === "1";
@@ -53,12 +103,13 @@ export async function downloadTrack({ url, format, filename, title, artist, forc
   const located = decodeHeader(res.headers.get("X-MusicGo-Located"));
   const foundTitle = decodeHeader(res.headers.get("X-MusicGo-FoundTitle"));
   const sizeBytes = res.headers.get("X-MusicGo-SizeBytes") || "";
+  const returnedTask = res.headers.get("X-MusicGo-TaskId") || taskId || "";
 
-  // Nombre final: usa el que eligió el usuario (el backend sanitiza).
   const cd = res.headers.get("Content-Disposition") || "";
   const cdName = decodeURIComponent((cd.match(/filename\*=UTF-8''([^;]+)/) || [])[1] || "");
   const fileName = cdName || `${filename || title || "audio"}.${format}`;
 
+  // Descarga del navegador (URL temporal independiente del reproductor).
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;
@@ -66,29 +117,40 @@ export async function downloadTrack({ url, format, filename, title, artist, forc
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 8000);
 
   return {
+    blob,
     fileName,
     fallback,
     source,
     located,
     foundTitle,
     sizeBytes: Number(sizeBytes) || blob.size,
+    taskId: returnedTask,
   };
 }
 
-/** Consulta el progreso de la tarea en curso */
-export async function getProgress() {
-  const res = await fetch("/api/progress");
+/** Progreso de una tarea concreta (polling durante la descarga). */
+export async function getTask(taskId) {
+  if (!taskId) return null;
+  try {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Cancela una descarga en curso. */
+export async function cancelTask(taskId) {
+  const res = await postJSON(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {});
   return res.json();
 }
 
-/** Convierte bytes a texto legible */
-export function formatBytes(bytes) {
-  if (!bytes || bytes <= 0) return "—";
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
+/** Estado global (sirve también como ping de backend). */
+export async function getProgress() {
+  const res = await fetch("/api/progress", { cache: "no-store" });
+  return res.json();
 }
