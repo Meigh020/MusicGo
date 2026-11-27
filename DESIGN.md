@@ -43,14 +43,15 @@ En oscuro el masthead se invierte (panel claro sobre página negra) para conserv
 
 - **Zen Kaku Gothic New** (400/500/700/900), autoalojada en `src/assets/fonts/`. UI y lectura.
 - **Barlow Condensed** (500/600/700), autoalojada. Rótulos, cifras, botones, etiquetas y navegación.
-- Base 14 px, cuerpo secundario 12–13 px, micro-rótulos 11 px (suelo de legibilidad).
+- Base 15 px, cuerpo secundario 13–14 px, micro-rótulos 12 px (suelo de legibilidad 11 px).
 - Cifras siempre `font-variant-numeric: tabular-nums`; títulos en mayúsculas con `letter-spacing`
   negativa (-0.015em) y `line-height` 0.88–0.92.
 - Iconos: Bootstrap Icons empaquetado con Vite (sin CDN), tamaño 13–15 px.
 
 ## Retícula
 
-- Contenedor 1320 px, relleno lateral 14 px (8 px en móvil).
+- Contenedor 1680 px, relleno lateral 14 px (8 px en móvil); barra, reproductor y pie comparten
+  el mismo ancho para que las reglas verticales caigan alineadas.
 - Tablero de 12 columnas con `gap: 8px`; módulos `span-4/5/7/8/12` que pasan a ancho completo
   por debajo de 1060 px.
 - Módulo: cabecera de 27 px (`surface-2`, regla inferior) + cuerpo con 12 px de relleno y 10 px
@@ -95,8 +96,8 @@ que sorprende: tamaños estimados, rescate vía SoundCloud, permiso de descargas
 ## Accesibilidad
 
 - Foco visible rojo de 2 px en todos los controles; `aria-label` en botones de icono.
-- Contraste AA verificado en ambos temas; suelo tipográfico de 11 px para texto funcional y 12 px
-  para cuerpo.
+- Contraste AA verificado en ambos temas; suelo tipográfico de 12 px para texto funcional y 13 px
+  para cuerpo (nunca por debajo de 11 px).
 - Formularios con `label` visible u oculto (`sr-only`), grupos de formato con `role="radiogroup"`.
 - Barrido de `impeccable detect` sin infracciones en `/`, `/cola`, `/biblioteca`, `/privacidad` y
   `/términos` (0 fallos; el único aviso es el raíl segmentado, que es el gesto firma).

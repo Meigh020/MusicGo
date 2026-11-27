@@ -137,7 +137,7 @@ MusicGo/
 
 ### Diseño
 - Documentado en `DESIGN.md` (contrato de dirección, tokens, retícula, componentes, no-hacer) y `PRODUCT.md` (verdad de producto).
-- Reglas duras: radio 0, base 14 px, suelo de 11 px para texto funcional, rojo solo como señal, sin glassmorphism ni degradados decorativos.
+- Reglas duras: radio 0, base 15 px, suelo de 11 px para texto funcional, rojo solo como señal, sin glassmorphism ni degradados decorativos. Contenedor máximo 1680 px (barra, contenido, reproductor y pie comparten ancho).
 - En móvil (< 760 px) la tabla de biblioteca se reordena como fichas con grid (`grid-template-areas`), sin scroll horizontal.
 
 ---
